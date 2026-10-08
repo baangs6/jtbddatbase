@@ -60,3 +60,5 @@ Matching and CSV tests use no database. Integration tests start isolated tempora
 
 Per-contact destinations: expand Company & owner in a contact row, enter a new company name and verified website, choose an active CRM user, and save the contact destination before selecting Move. Blank company fields use the shared company decision. The selected owner is saved in assignedBy, which the CRM uses for displayed ownership and dashboards, and is included in assignedTo; existing assignedTo users are retained. The staging administrator remains the audit actor. Inactive owners block transfer. Custom destinations do not change the imported company grouping.
 
+
+Hiring research: Research in ChatGPT copies the provided Jobs Territory prompt with the selected company name. Open ChatGPT, paste and run the prompt, then paste the answer back and choose Save research. Answers and save timestamps remain in staging, with Markdown tables and source links displayed safely. No AI API key is required and no automated research is performed.

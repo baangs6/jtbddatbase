@@ -102,6 +102,13 @@ router.get('/crm-search', async (req, res) => {
   const leads = await getCrmLeads();
   res.json(m.candidates(name, leads.map(({ points_of_contact, ...lead }) => lead)));
 });
+router.put('/companies/:id/hiring-research', async (req, res) => {
+  if (typeof req.body.answer !== 'string' || req.body.answer.length > 30000) throw fail(400, 'Paste an answer of up to 30,000 characters.');
+  const { Company } = await getModels();
+  const company = await Company.findByIdAndUpdate(id(req.params.id), { $set: { hiringResearch: req.body.answer.trim(), hiringResearchSavedAt: new Date() } }, { returnDocument: 'after', runValidators: true });
+  if (!company) throw fail(404, 'Company not found.');
+  res.json(company);
+});
 router.patch('/companies/:id/review-status', async (req, res) => {
   if (!['pending', 'no_hiring', 'verify_later', 'another_company'].includes(req.body.reviewStatus)) throw fail(400, 'Choose a valid company review status.');
   const { Company } = await getModels();
