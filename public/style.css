@@ -11,3 +11,9 @@
 .page-jump { display: flex; align-items: center; gap: 4px; }
 .page-jump input { width: 56px; padding: 6px 3px; border: 1px solid var(--line); border-radius: 5px; text-align: center; }
 .page-jump button { padding: 6px; }
+
+.company-status-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.company-status-actions button { font-size: 12px; padding: 8px 10px; }
+.filter-row { flex-wrap: wrap; }
+.badge.no_hiring { background: #f3e9e3; color: #8a4b30; }
+.badge.verify_later { background: #e8eef7; color: #466181; }

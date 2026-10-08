@@ -66,7 +66,8 @@ router.get('/companies', async (req, res) => {
   const { Company, Contact } = await getModels();
   const search = m.clean(req.query.search).slice(0, 150), page = Math.max(1, Number(req.query.page) || 1);
   const query = search ? { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } } : {};
-  if (['pending', 'existing', 'new'].includes(req.query.status)) query.decision = req.query.status;
+  if (['no_hiring', 'verify_later'].includes(req.query.status)) query.reviewStatus = req.query.status;
+  else if (['pending', 'existing', 'new'].includes(req.query.status)) { query.decision = req.query.status; query.reviewStatus = { $nin: ['no_hiring', 'verify_later'] }; }
   const [companies, total, stats] = await Promise.all([
     Company.find(query).sort({ name: 1 }).skip((page - 1) * 40).limit(40).lean(), Company.countDocuments(query),
     Contact.aggregate([{ $match: { mergedInto: null } }, { $group: { _id: '$status', count: { $sum: 1 } } }])
@@ -100,6 +101,13 @@ router.get('/crm-search', async (req, res) => {
   const name = m.clean(req.query.name).slice(0, 150); if (!name) return res.json([]);
   const leads = await getCrmLeads();
   res.json(m.candidates(name, leads.map(({ points_of_contact, ...lead }) => lead)));
+});
+router.patch('/companies/:id/review-status', async (req, res) => {
+  if (!['pending', 'no_hiring', 'verify_later'].includes(req.body.reviewStatus)) throw fail(400, 'Choose a valid company review status.');
+  const { Company } = await getModels();
+  const company = await Company.findByIdAndUpdate(id(req.params.id), { $set: { reviewStatus: req.body.reviewStatus } }, { new: true, runValidators: true });
+  if (!company) throw fail(404, 'Company not found.');
+  res.json(company);
 });
 router.put('/companies/:id', async (req, res) => {
   const { Company } = await getModels(); const company = await Company.findById(id(req.params.id));
