@@ -34,7 +34,9 @@ async function enter() {
   state.user = state.config.demo ? { name: 'Demo', role: 'admin' } : await api('/team/me');
   $('#signed-in-user').textContent = state.user.name;
   $('#team-open').hidden = state.config.demo || state.user.role !== 'admin';
-  $('#import-open').hidden = $('#empty-import').hidden = state.user.role !== 'admin';
+  $('#import-open').hidden = state.user.role !== 'admin';
+  const emptyImport = $('#empty-import');
+  if (emptyImport) emptyImport.hidden = state.user.role !== 'admin';
   $('#login').hidden = true; $('#workspace').hidden = false;
   $('#demo-banner').hidden = !state.config.demo;
   $('#logout').hidden = Boolean(state.config.demo);
