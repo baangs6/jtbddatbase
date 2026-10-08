@@ -17,3 +17,5 @@
 .filter-row { flex-wrap: wrap; }
 .badge.no_hiring { background: #f3e9e3; color: #8a4b30; }
 .badge.verify_later { background: #e8eef7; color: #466181; }
+
+.badge.another_company { background: #e9e5f4; color: #635185; }

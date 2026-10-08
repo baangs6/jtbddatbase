@@ -16,7 +16,7 @@ module.exports = async () => {
     }, { timestamps: true });
     const company = new mongoose.Schema({
       key: { type: String, unique: true, required: true }, name: String,
-      reviewStatus: { type: String, enum: ['pending', 'no_hiring', 'verify_later'], default: 'pending' },
+      reviewStatus: { type: String, enum: ['pending', 'no_hiring', 'verify_later', 'another_company'], default: 'pending' },
       decision: { type: String, enum: ['pending', 'existing', 'new'], default: 'pending' },
       crmLeadId: mongoose.Schema.Types.ObjectId, verifiedWebsite: String, reviewedBy: mongoose.Schema.Types.ObjectId
     }, { timestamps: true });
