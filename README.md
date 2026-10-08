@@ -48,7 +48,7 @@ Duplicate checks include every alternative phone. Other contacts with shared ema
 
 Name grouping keeps legal suffix variants separate to avoid accidentally combining different companies. Match scoring treats common legal suffixes as equivalent only for suggestions. Branches/subsidiaries with shared names require manual verification. Phone matching defaults to Indian country-code normalization while retaining other international country codes.
 
-The first version uses one separate application administrator and loads CRM company/contact details for comparisons. It is intended for the discussed list size, not millions of records. Spreadsheet files must be exported to CSV. It does not automatically scrape or guess websites, merge conflicting contacts, or bypass your CRM approval state. Contacts added to incomplete leads remain pending approval.
+The configured administrator can create individual staging team accounts in Team & reports. Members can review companies and move contacts; imports, account management and daily reports require administrator access. Passwords are hashed. Disabling an account or resetting its password invalidates existing sessions.
 
 ## Checks
 
@@ -58,5 +58,7 @@ npm test
 
 Matching and CSV tests use no database. Integration tests start isolated temporary MongoDB instances and never use `.env` or production databases.
 
-Per-contact destinations: expand Company & owner in a contact row, enter a new company name and verified website, choose an active CRM user, and save the contact destination before selecting Move. Blank company fields use the shared company decision. The selected owner is saved in assignedBy, which the CRM uses for displayed ownership and dashboards, and is included in assignedTo; existing assignedTo users are retained. The staging administrator remains the audit actor. Inactive owners block transfer. Custom destinations do not change the imported company grouping.
+Per-contact destinations: expand Company & owner in a contact row, enter a new company name and verified website, choose an active CRM user, and save the contact destination before selecting Move. Blank company fields use the shared company decision. The selected owner is saved in assignedBy, which the CRM uses for displayed ownership and dashboards, and is included in assignedTo; existing assignedTo users are retained. The configured CRM administrator remains the CRM creator, while the signed-in staging team member is recorded separately as the person doing the work. Inactive owners block transfer. Custom destinations do not change the imported company grouping.
 
+
+Daily reports use Asia/Kolkata calendar days and begin recording activity from this update onward. They show each member's company decisions, status changes, destination/owner saves, transferred contacts, skips and restores. Repeated saves count as actions, while successful transfers count each contact once. Summary totals cover the whole selected day; the activity list shows the latest 500 events. Team accounts and activity are stored only in the staging database. No additional Render environment variables are required.

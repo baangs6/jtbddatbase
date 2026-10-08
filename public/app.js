@@ -29,8 +29,12 @@ async function busy(button, work) {
 }
 const labels = { existing_crm: 'Existing in CRM', another_company: 'Move to another company', no_hiring: 'No Hiring', verify_later: 'Verify Later', pending: 'To review', existing: 'Linked to CRM', new: 'New company', transferred: 'Transferred', duplicate: 'Duplicate', skipped: 'Skipped' };
 const badge = value => `<span class="badge ${esc(value)}">${esc(labels[value] || value)}</span>`;
-function signOut() { state.token = null; sessionStorage.removeItem('review-token'); $('#workspace').hidden = true; $('#login').hidden = false; $('#login-password').value = ''; }
+function signOut() { document.querySelectorAll('dialog[open]').forEach(d => d.close()); state.user = null; state.token = null; sessionStorage.removeItem('review-token'); $('#workspace').hidden = true; $('#login').hidden = false; $('#login-password').value = ''; }
 async function enter() {
+  state.user = state.config.demo ? { name: 'Demo', role: 'admin' } : await api('/team/me');
+  $('#signed-in-user').textContent = state.user.name;
+  $('#team-open').hidden = state.config.demo || state.user.role !== 'admin';
+  $('#import-open').hidden = $('#empty-import').hidden = state.user.role !== 'admin';
   $('#login').hidden = true; $('#workspace').hidden = false;
   $('#demo-banner').hidden = !state.config.demo;
   $('#logout').hidden = Boolean(state.config.demo);
@@ -222,4 +226,45 @@ async function boot() {
   try { state.config = await api('/config'); if (state.config.demo) state.token = 'demo'; if (state.token) await enter(); else signOut(); }
   catch(error) { signOut(); $('#login-error').textContent = error.message; }
 }
+const actionNames = { company_review: 'Company decision saved', company_status: 'Company status changed', contact_destination: 'Destination / owner saved', contact_skipped: 'Contact skipped', contact_restored: 'Contact restored', contact_transferred: 'Contact moved to CRM' };
+const indiaDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+async function loadTeamUsers() {
+  state.teamUsers = await api('/team/users');
+  $('#team-users').innerHTML = state.teamUsers.length ? state.teamUsers.map(u => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.active ? 'Active' : 'Disabled'}</td><td><button class="secondary" data-account-toggle="${esc(u._id)}">${u.active ? 'Disable' : 'Enable'}</button> <button class="quiet" data-account-reset="${esc(u._id)}">Reset password</button></td></tr>`).join('') : '<tr><td colspan="4">No team accounts yet.</td></tr>';
+  const selected = $('#report-user').value;
+  $('#report-user').innerHTML = '<option value="">All users</option><option value="administrator">Administrator</option>' + state.teamUsers.map(u => `<option value="${esc(u._id)}">${esc(u.name)} (${esc(u.username)})</option>`).join('');
+  $('#report-user').value = selected;
+  document.querySelectorAll('[data-account-toggle]').forEach(button => button.onclick = () => busy(button, async () => {
+    const u = state.teamUsers.find(u => u._id === button.dataset.accountToggle);
+    await api('/team/users/' + u._id, { method: 'PATCH', body: JSON.stringify({ active: !u.active }) }); await loadTeamUsers();
+  }));
+  document.querySelectorAll('[data-account-reset]').forEach(button => button.onclick = () => {
+    const u = state.teamUsers.find(u => u._id === button.dataset.accountReset);
+    $('#reset-account').value = u._id; $('#reset-name').textContent = u.name; $('#reset-password').value = ''; $('#reset-form').hidden = false; $('#reset-password').focus();
+  });
+}
+async function loadDailyReport() {
+  const report = await api(`/team/report?date=${encodeURIComponent($('#report-date').value)}&user=${encodeURIComponent($('#report-user').value)}`);
+  const rows = new Map();
+  for (const item of report.summary) {
+    const key = item._id.actorId;
+    if (!rows.has(key)) rows.set(key, { name: item.name, username: item.username, counts: {}, companies: new Set() });
+    const row = rows.get(key); row.counts[item._id.action] = item.count; item.companies.filter(Boolean).forEach(c => row.companies.add(c));
+  }
+  $('#report-summary').innerHTML = rows.size ? [...rows.values()].map(r => `<tr><td>${esc(r.name)}<small>${esc(r.username)}</small></td><td>${r.companies.size}</td><td>${r.counts.company_review || 0}</td><td>${r.counts.company_status || 0}</td><td>${r.counts.contact_destination || 0}</td><td>${r.counts.contact_transferred || 0}</td><td>${r.counts.contact_skipped || 0}</td><td>${r.counts.contact_restored || 0}</td></tr>`).join('') : '<tr><td colspan="8">No recorded work for this date.</td></tr>';
+  $('#report-total').textContent = `${report.total} recorded actions · India time · Showing latest ${report.events.length} actions`;
+  $('#report-events').innerHTML = report.events.map(e => `<tr><td>${esc(new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(e.at)))}</td><td>${esc(e.actorName)}</td><td>${esc(e.companyName)}</td><td>${esc(actionNames[e.action] || e.action)}</td><td>${esc(labels[e.detail] || e.detail)}</td></tr>`).join('');
+}
+$('#team-open').onclick = () => busy($('#team-open'), async () => { $('#report-date').value = indiaDate(); await loadTeamUsers(); await loadDailyReport(); $('#team-dialog').showModal(); });
+$('#team-close').onclick = () => { $('#team-dialog').close(); $('#team-password').value = ''; $('#reset-password').value = ''; };
+$('#team-create').onsubmit = event => {
+  event.preventDefault(); busy($('#team-create button'), async () => {
+    await api('/team/users', { method: 'POST', body: JSON.stringify({ name: $('#team-name').value, username: $('#team-username').value, password: $('#team-password').value }) });
+    $('#team-create').reset(); await loadTeamUsers(); toast('Team account created.');
+  });
+};
+$('#reset-form').onsubmit = event => {
+  event.preventDefault(); busy($('#reset-form button'), async () => { await api('/team/users/' + $('#reset-account').value, { method: 'PATCH', body: JSON.stringify({ password: $('#reset-password').value }) }); $('#reset-password').value = ''; $('#reset-form').hidden = true; toast('Password reset. The member must sign in again.'); });
+};
+$('#report-form').onsubmit = event => { event.preventDefault(); busy($('#report-form button'), loadDailyReport); };
 boot();

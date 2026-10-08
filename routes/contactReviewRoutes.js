@@ -12,6 +12,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const id = value => { if (!mongoose.isValidObjectId(value)) throw fail(400, 'Invalid record ID.'); return value; };
 router.use(auth);
+const audit = require('../services/teamAudit');
+router.use((req, res, next) => req.path.startsWith('/import') && req.user.role !== 'admin' ? res.status(403).json({ message: 'Only administrators can import contact lists.' }) : next());
 const readCsv = require('../services/csvImport');
 const getCrmLeads = async () => {
   if (!isConfigured()) return [];
@@ -108,6 +110,7 @@ router.patch('/companies/:id/review-status', async (req, res) => {
   const { Company } = await getModels();
   const company = await Company.findByIdAndUpdate(id(req.params.id), { $set: { reviewStatus: req.body.reviewStatus } }, { new: true, runValidators: true });
   if (!company) throw fail(404, 'Company not found.');
+  await audit(req.user, 'company_status', company._id, company.name, req.body.reviewStatus);
   res.json(company);
 });
 router.put('/companies/:id', async (req, res) => {
@@ -122,7 +125,7 @@ router.put('/companies/:id', async (req, res) => {
     company.crmLeadId = lead._id;
   } else company.crmLeadId = undefined;
   company.decision = req.body.decision; company.verifiedWebsite = url; company.reviewedBy = req.user.id;
-  await company.save(); res.json(company);
+  await company.save(); await audit(req.user, 'company_review', company._id, company.name, company.decision); res.json(company);
 });
 router.patch('/contacts/:id', async (req, res) => {
   const { Contact } = await getModels(); const contact = await Contact.findById(id(req.params.id));
@@ -139,20 +142,23 @@ router.patch('/contacts/:id', async (req, res) => {
     }
     contact.destinationName = name; contact.destinationWebsite = name ? website : '';
     contact.ownerId = req.body.ownerId || undefined;
-    await contact.save(); return res.json(contact);
+    await contact.save(); await audit(req.user, 'contact_destination', contact._id, contact.company_name, (contact.destinationName || 'Shared company decision') + (contact.ownerId ? ' · CRM owner ID: ' + contact.ownerId : ' · Default CRM owner')); return res.json(contact);
   }
   if (!['pending', 'skipped'].includes(req.body.status)) throw fail(400, 'Choose pending or skipped.');
-  contact.status = req.body.status; await contact.save(); res.json(contact);
+  const changed = contact.status !== req.body.status;
+  contact.status = req.body.status; await contact.save(); if (changed) await audit(req.user, contact.status === 'skipped' ? 'contact_skipped' : 'contact_restored', contact._id, contact.company_name); res.json(contact);
 });
 // Serialize staging transfers across app processes. The lock write participates in the CRM transaction.
 const lockSchema = new mongoose.Schema({ _id: String, revision: Number });
 const Lock = crmConnection.model('ContactReviewLock', lockSchema);
 const transfer = async (contactId, user) => {
   await ensureConnected();
+  const actor = { ...user };
   // Explicitly attribute every CRM write to an existing active CRM administrator.
-  const admin = await crmConnection.collection('users').findOne({ email: user.email, role: 'Admin', status: 'Active' }, { projection: { _id: 1, name: 1 } });
+  const admin = await crmConnection.collection('users').findOne({ email: process.env.REVIEW_ADMIN_EMAIL.toLowerCase(), role: 'Admin', status: 'Active' }, { projection: { _id: 1, name: 1 } });
   if (!admin) throw fail(403, 'Use the email address of an active CRM administrator in REVIEW_ADMIN_EMAIL before transferring.');
-  user = { ...user, id: admin._id, name: admin.name };
+  user = { ...user, id: admin._id, name: actor.role === 'member' ? actor.name : admin.name };
+  if (actor.role !== 'member') actor.name = admin.name;
   const { Contact, Company } = await getModels();
   const contact = await Contact.findById(id(contactId)); if (!contact) throw fail(404, 'Contact not found.');
   if (contact.mergedInto) throw fail(409, 'This record was combined with another contact. Refresh the company.');
@@ -196,10 +202,11 @@ const transfer = async (contactId, user) => {
       if (!lead.assignedTo.some(value => String(value) === String(ownerId))) lead.assignedTo.push(ownerId);
     }
     await lead.save({ session });
-    await LeadActivity.create([{ leadId: lead._id, type: 'POC Added', description: `Imported reviewed contact: ${contact.name || contact.email || contact.phone}`, performedBy: user.id, performedByName: user.name, metadata: { pocId: contact._id, reviewContactId: contact._id } }], { session });
+    await LeadActivity.create([{ leadId: lead._id, type: 'POC Added', description: `Imported reviewed contact: ${contact.name || contact.email || contact.phone}`, performedBy: user.id, performedByName: user.name, metadata: { pocId: contact._id, reviewContactId: contact._id, reviewActorId: String(actor.id || 'administrator'), reviewActorName: actor.name } }], { session });
     result = { id: contactId, status: 'transferred', leadId: lead._id, contactId: contact._id };
   });
   if (result.status === 'transferred') {
+    await audit(actor, 'contact_transferred', contact._id, company.name, '', 'transfer:' + contact._id);
     if (!contact.destinationName) await Company.updateOne({ _id: company._id }, { $set: { decision: 'existing', crmLeadId: result.leadId } });
     await Contact.updateOne({ _id: contact._id }, { $set: { status: 'transferred', crmLeadId: result.leadId, crmContactId: result.contactId, transferredAt: new Date(), note: '' } });
   } else await Contact.updateOne({ _id: contact._id }, { $set: { status: 'duplicate', note: result.message } });

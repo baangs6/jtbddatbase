@@ -100,6 +100,45 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
       assert.equal(String(created.createdBy), String(userId));
       assert.equal(created.points_of_contact.length, 1);
     }
+
+    const { User, Activity } = require('../models/teamModels');
+    await Promise.all([User.init(), Activity.init()]);
+    const createdUser = await call('/api/team/users', { name: 'Entry One', username: 'entry.one', password: 'team-test-password-123' }, 'POST', token);
+    assert.equal(createdUser.status, 201);
+    assert.equal((await call('/api/team/users', { name: 'Duplicate', username: 'entry.one', password: 'team-test-password-123' }, 'POST', token)).status, 409);
+    const memberLogin = await call('/api/login', { email: 'ENTRY.ONE', password: 'team-test-password-123' });
+    assert.equal(memberLogin.status, 200);
+    const memberToken = memberLogin.data.token;
+    assert.equal((await call('/api/team/me', null, 'GET', memberToken)).data.name, 'Entry One');
+    assert.equal((await call('/api/team/users', null, 'GET', memberToken)).status, 403);
+    assert.equal((await call('/api/contact-review/import/preview', null, 'POST', memberToken)).status, 403);
+    const accountList = await call('/api/team/users', null, 'GET', token);
+    assert.ok(accountList.data.every(u => !u.passwordHash));
+    const teamContact = await Contact.findOne({ status: 'pending', companyKey: { $ne: abc.key } });
+    const teamCompany = await Company.findOne({ key: teamContact.companyKey });
+    assert.equal((await call('/api/contact-review/companies/' + teamCompany._id + '/review-status', { reviewStatus: 'verify_later' }, 'PATCH', memberToken)).status, 200);
+    assert.equal((await call('/api/contact-review/contacts/' + teamContact._id, { destinationName: 'Team Destination', destinationWebsite: 'team.example', ownerId: String(owner) }, 'PATCH', memberToken)).status, 200);
+    const memberMove = await call('/api/contact-review/transfer', { contactIds: [String(teamContact._id)] }, 'POST', memberToken);
+    assert.equal(memberMove.data.results[0].status, 'transferred', JSON.stringify(memberMove.data));
+    await call('/api/contact-review/transfer', { contactIds: [String(teamContact._id)] }, 'POST', memberToken);
+    const teamLead = await crm.collection('leads').findOne({ company_name: 'Team Destination' });
+    assert.equal(String(teamLead.assignedBy), String(owner), 'CRM owner is separate from entry member');
+    assert.equal(await Activity.countDocuments({ actorId: createdUser.data.id, action: 'contact_transferred' }), 1);
+    await Activity.create({ actorId: createdUser.data.id, actorName: 'Entry One', username: 'entry.one', action: 'company_review', companyName: 'Boundary', at: new Date('2026-10-07T18:30:00Z') });
+    await Activity.create({ actorId: createdUser.data.id, actorName: 'Entry One', username: 'entry.one', action: 'company_review', companyName: 'Before', at: new Date('2026-10-07T18:29:59Z') });
+    const report = await call('/api/team/report?date=2026-10-08&user=' + createdUser.data.id, null, 'GET', token);
+    assert.equal(report.status, 200);
+    assert.ok(report.data.events.some(e => e.companyName === 'Boundary'));
+    assert.ok(!report.data.events.some(e => e.companyName === 'Before'));
+    assert.equal((await call('/api/team/report', null, 'GET', memberToken)).status, 403);
+    assert.equal((await call('/api/team/report?date=2026-02-31', null, 'GET', token)).status, 400);
+    const disabled = await call('/api/team/users/' + createdUser.data.id, { active: false }, 'PATCH', token);
+    assert.equal(disabled.status, 200); assert.ok(!disabled.data.passwordHash);
+    assert.equal((await call('/api/team/me', null, 'GET', memberToken)).status, 401);
+    assert.equal((await call('/api/login', { email: 'entry.one', password: 'team-test-password-123' })).status, 401);
+    await call('/api/team/users/' + createdUser.data.id, { active: true, password: 'changed-team-password-123' }, 'PATCH', token);
+    assert.equal((await call('/api/login', { email: 'entry.one', password: 'team-test-password-123' })).status, 401);
+    assert.equal((await call('/api/login', { email: 'entry.one', password: 'changed-team-password-123' })).status, 200);
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     await require('../services/crmConnection').connection.close();
