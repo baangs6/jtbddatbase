@@ -117,6 +117,11 @@ router.put('/companies/:id', async (req, res) => {
   const { Company } = await getModels(); const company = await Company.findById(id(req.params.id));
   if (!company) throw fail(404, 'Company not found.');
   if (!['pending', 'existing', 'new'].includes(req.body.decision)) throw fail(400, 'Choose a company decision.');
+  if (Object.hasOwn(req.body, 'newCompanyName')) {
+    const name = m.clean(req.body.newCompanyName).slice(0,200);
+    if (req.body.decision === 'new' && (!name || !m.companyKey(name))) throw fail(400, 'Enter a valid new company name.');
+    company.newCompanyName = name;
+  }
   if (req.body.ownerId) {
     await ensureConnected();
     if (!await crmConnection.collection('users').findOne({ _id: new mongoose.Types.ObjectId(id(req.body.ownerId)), status: 'Active' })) throw fail(400, 'Select an active CRM user.');
@@ -171,7 +176,7 @@ const transfer = async (contactId, user) => {
   if (contact.status === 'transferred') return { id: contactId, status: 'transferred', alreadyTransferred: true };
   if (contact.status === 'skipped') throw fail(409, 'Restore this contact before moving it.');
   const sourceCompany = await Company.findOne({ key: contact.companyKey });
-  const company = contact.destinationName ? { name: contact.destinationName, verifiedWebsite: contact.destinationWebsite, decision: 'new' } : sourceCompany;
+  const company = contact.destinationName ? { name: contact.destinationName, verifiedWebsite: contact.destinationWebsite, decision: 'new' } : sourceCompany ? { ...sourceCompany.toObject(), name: sourceCompany.newCompanyName || sourceCompany.name } : null;
   const ownerId = contact.ownerId || (!contact.destinationName && company?.ownerId) || user.id;
   if (!await crmConnection.collection('users').findOne({ _id: new mongoose.Types.ObjectId(ownerId), status: 'Active' })) throw fail(409, 'The selected owner is no longer active. Choose another user.');
   if (!company || company.decision === 'pending') throw fail(409, 'Confirm the company match first.');

@@ -59,8 +59,10 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     const companyOwner = new mongoose.Types.ObjectId();
     await crm.collection('users').insertOne({ _id: companyOwner, name: 'Company Owner', status: 'Active' });
     assert.equal((await call('/api/contact-review/companies/' + fresh._id, { decision: 'new', website: 'fresh.example', ownerId: String(new mongoose.Types.ObjectId()) }, 'PUT', token)).status, 400);
-    const companySaved = await call('/api/contact-review/companies/' + fresh._id, { decision: 'new', website: 'fresh.example', industryName: 'Manufacturing', ownerId: String(companyOwner) }, 'PUT', token);
+    const companySaved = await call('/api/contact-review/companies/' + fresh._id, { decision: 'new', website: 'fresh.example', newCompanyName: 'Fresh Manufacturing Ltd', industryName: 'Manufacturing', ownerId: String(companyOwner) }, 'PUT', token);
     assert.equal(companySaved.status, 200);
+    assert.equal(companySaved.data.newCompanyName, 'Fresh Manufacturing Ltd');
+    assert.equal((await Company.findById(fresh._id)).name, 'Fresh Industries', 'Source group stays intact');
     assert.equal(companySaved.data.industryName, 'Manufacturing');
     assert.equal(companySaved.data.ownerId, String(companyOwner));
     const freshContacts = await Contact.find({ companyKey: fresh.key });
@@ -69,7 +71,7 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     for (let i = 0; i < outcomes.length; i++) if (outcomes[i].data.results[0].status !== 'transferred') {
       const retryFresh = await call('/api/contact-review/transfer', { contactIds: [String(freshContacts[i]._id)] }, 'POST', token); assert.equal(retryFresh.data.results[0].status, 'transferred');
     }
-    const freshLeads = await crm.collection('leads').find({ company_name: 'Fresh Industries' }).toArray(); assert.equal(freshLeads.length, 1); assert.equal(freshLeads[0].points_of_contact.length, 2);
+    const freshLeads = await crm.collection('leads').find({ company_name: 'Fresh Manufacturing Ltd' }).toArray(); assert.equal(freshLeads.length, 1); assert.equal(freshLeads[0].points_of_contact.length, 2);
     assert.equal(freshLeads[0].industry_name, 'Manufacturing');
     assert.equal(String(freshLeads[0].assignedBy), String(companyOwner));
     assert.ok(freshLeads[0].assignedTo.some(u => String(u) === String(companyOwner)));
