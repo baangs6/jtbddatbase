@@ -66,8 +66,9 @@ router.get('/companies', async (req, res) => {
   const { Company, Contact } = await getModels();
   const search = m.clean(req.query.search).slice(0, 150), page = Math.max(1, Number(req.query.page) || 1);
   const query = search ? { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } } : {};
-  if (['no_hiring', 'verify_later', 'another_company'].includes(req.query.status)) query.reviewStatus = req.query.status;
-  else if (['pending', 'existing', 'new'].includes(req.query.status)) { query.decision = req.query.status; query.reviewStatus = { $nin: ['no_hiring', 'verify_later', 'another_company'] }; }
+  if (req.query.status === 'existing_crm') query.$or = [{ decision: 'existing' }, { reviewStatus: 'existing_crm' }];
+  else if (['no_hiring', 'verify_later', 'another_company'].includes(req.query.status)) query.reviewStatus = req.query.status;
+  else if (['pending', 'existing', 'new'].includes(req.query.status)) { query.decision = req.query.status; query.reviewStatus = { $nin: ['no_hiring', 'verify_later', 'another_company', 'existing_crm'] }; }
   const [companies, total, stats] = await Promise.all([
     Company.find(query).sort({ name: 1 }).skip((page - 1) * 40).limit(40).lean(), Company.countDocuments(query),
     Contact.aggregate([{ $match: { mergedInto: null } }, { $group: { _id: '$status', count: { $sum: 1 } } }])
@@ -103,7 +104,7 @@ router.get('/crm-search', async (req, res) => {
   res.json(m.candidates(name, leads.map(({ points_of_contact, ...lead }) => lead)));
 });
 router.patch('/companies/:id/review-status', async (req, res) => {
-  if (!['pending', 'no_hiring', 'verify_later', 'another_company'].includes(req.body.reviewStatus)) throw fail(400, 'Choose a valid company review status.');
+  if (!['pending', 'no_hiring', 'verify_later', 'another_company', 'existing_crm'].includes(req.body.reviewStatus)) throw fail(400, 'Choose a valid company review status.');
   const { Company } = await getModels();
   const company = await Company.findByIdAndUpdate(id(req.params.id), { $set: { reviewStatus: req.body.reviewStatus } }, { new: true, runValidators: true });
   if (!company) throw fail(404, 'Company not found.');
