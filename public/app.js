@@ -100,28 +100,6 @@ function syncWebsiteOption() {
   if (input.disabled) input.checked = false;
   input.closest('label').hidden = input.disabled;
 }
-
-function researchCell(value) {
-  return esc(value).replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-}
-function researchAnswer(value) {
-  const lines = String(value || '').split(/\r?\n/);
-  let inTable = false, html = '';
-  for (const line of lines) {
-    if (line.trim().startsWith('|')) {
-      const cells = line.trim().replace(/^\||\|$/g, '').split('|');
-      if (cells.every(c => /^\s*:?-+:?\s*$/.test(c))) continue;
-      if (!inTable) { html += '<div class="table-wrap"><table>'; inTable = true; }
-      html += '<tr>' + cells.map(c => '<td>' + researchCell(c.trim()) + '</td>').join('') + '</tr>';
-    } else {
-      if (inTable) { html += '</table></div>'; inTable = false; }
-      html += '<div class="research-line">' + researchCell(line) + '</div>';
-    }
-  }
-  if (inTable) html += '</table></div>';
-  return html;
-}
-
 function renderDetail() {
   state.companyDirty = false; state.destinationDirty = new Set();
   const { company: c, contacts, crmConnected } = state.detail;
@@ -129,7 +107,6 @@ function renderDetail() {
   const available = contacts.filter(x => !['transferred', 'skipped'].includes(x.status));
   const duplicateCount = contacts.filter(x => x.duplicates.length).length;
   $('#detail').innerHTML = `<div class="detail-head"><div><h2>${esc(c.name)}</h2><p>${totalContacts} contacts in your import · ${available.length} waiting on this page</p></div>${badge(c.reviewStatus && c.reviewStatus !== "pending" ? c.reviewStatus : c.decision)}<div class="company-status-actions"><button class="secondary" data-review-status="another_company">Move to another company</button><button class="secondary" data-review-status="no_hiring">No Hiring</button><button class="secondary" data-review-status="verify_later">Verify Later</button>${c.reviewStatus && c.reviewStatus !== "pending" ? '<button class="quiet" data-review-status="pending">Restore to review</button>' : ""}</div></div>
-  <section class="hiring-research"><h3>Hiring research</h3><p>Copy the prompt, run it in ChatGPT, and paste the answer here.</p><div class="review-actions"><button class="secondary" id="research-chatgpt">Research in ChatGPT</button><a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT ↗</a></div><details id="research-prompt-fallback" hidden><summary>Copy prompt manually</summary><textarea class="field" id="research-prompt" aria-label="Research prompt" readonly></textarea></details><label for="research-answer">ChatGPT answer</label><textarea class="field" id="research-answer" maxlength="30000" placeholder="Paste the research answer or Markdown table here">${esc(c.hiringResearch || '')}</textarea><button class="primary" id="save-research">Save research</button><p class="muted">${c.hiringResearchSavedAt ? 'Answer saved ' + esc(new Date(c.hiringResearchSavedAt).toLocaleString()) + ' · Pasted from ChatGPT' : 'No research saved yet'}</p><div id="saved-research">${researchAnswer(c.hiringResearch)}</div></section>
   <section class="company-review"><div class="section-label"><span>1</span> CONFIRM THE COMPANY</div><p class="match-hint">Similar names are suggestions. Confirm the correct company before moving contacts.</p>
   ${!crmConnected ? '<div class="warning">CRM is not connected. You can review imports and save websites; transfers stay disabled.</div>' : ''}
   <div class="inline-search"><input class="field" id="crm-search" aria-label="Search CRM company names" placeholder="Try another company name"><button class="secondary" id="crm-search-button" ${!crmConnected ? 'disabled' : ''}>Search CRM</button></div><div id="matches"></div>
@@ -148,20 +125,6 @@ function renderDetail() {
     ${row.status === 'transferred' ? '' : `<details><summary>Company &amp; owner</summary><label>New company name<input class="field" data-destination-name="${esc(row._id)}" aria-label="New company name for ${esc(row.name)}" value="${esc(row.destinationName || '')}" placeholder="Leave blank to use company above"></label><label>Verified website<input class="field" data-destination-website="${esc(row._id)}" aria-label="New company website for ${esc(row.name)}" value="${esc(row.destinationWebsite || '')}"></label><label>Assign to active CRM user<select class="field" data-owner="${esc(row._id)}" aria-label="Owner for ${esc(row.name)}"><option value="">Use default company ownership</option>${(state.users || []).map(u => `<option value="${esc(u._id)}" ${row.ownerId === u._id ? 'selected' : ''}>${esc(u.name)} (${esc(u.email)})</option>`).join('')}</select></label><small>CRM ownership is at company level. Existing company owners are retained.</small><button class="secondary" data-save-destination="${esc(row._id)}">Save contact destination</button></details>`}</td><td><div class="contact-email">${esc(row.email || 'No email')}</div><small>${esc(row.phone || 'No phone')}</small>${altPhones}</td><td>${badge(row.status === 'pending' && crmDuplicate ? 'duplicate' : row.status)}${row.duplicates.map(d => `<span class="duplicate-note">${esc(d.source)}: ${esc(d.reason)}<br>${esc(d.name || 'Contact')} · ${esc(d.company_name)}</span>`).join('')}${!row.email && !row.phone ? '<span class="duplicate-note">Name only — verify identity manually.</span>' : ''}</td><td>${row.status === 'transferred' ? '' : `<button class="quiet" data-skip="${esc(row._id)}" data-next="${row.status === 'skipped' ? 'pending' : 'skipped'}">${row.status === 'skipped' ? 'Restore' : 'Skip'}</button>`}</td></tr>`;
   }).join('')}</tbody></table></div><div class="pagination"><button id="contact-prev" class="quiet" ${contactPage <= 1 ? 'disabled' : ''}>← Previous</button><span>Page ${contactPage} / ${contactPages} · up to 100 contacts</span><button id="contact-next" class="quiet" ${contactPage >= contactPages ? 'disabled' : ''}>Next →</button></div><div class="table-bottom">Email and phone matches block transfers. Import matches stay visible for review.</div></section>`;
   renderMatches();
-  $('#research-chatgpt').onclick = () => busy($('#research-chatgpt'), async () => {
-    const response = await fetch('/hiring-prompt.txt');
-    if (!response.ok) throw new Error('Could not load the research prompt.');
-    const prompt = await response.text() + '\nCompany to research: ' + c.name;
-    try { await navigator.clipboard.writeText(prompt); toast('Prompt copied. Open ChatGPT and paste it there.'); }
-    catch { $('#research-prompt-fallback').hidden = false; $('#research-prompt-fallback').open = true; $('#research-prompt').value = prompt; $('#research-prompt').focus(); $('#research-prompt').select(); toast('Copy the selected prompt manually, then paste it into ChatGPT.'); }
-  });
-  $('#save-research').onclick = () => busy($('#save-research'), async () => {
-    const saved = await api('/contact-review/companies/' + c._id + '/hiring-research', { method: 'PUT', body: JSON.stringify({ answer: $('#research-answer').value }) });
-    c.hiringResearch = saved.hiringResearch; c.hiringResearchSavedAt = saved.hiringResearchSavedAt;
-    $('#saved-research').innerHTML = researchAnswer(saved.hiringResearch);
-    $('.hiring-research .muted').textContent = 'Answer saved ' + new Date(saved.hiringResearchSavedAt).toLocaleString() + ' · Pasted from ChatGPT';
-    toast('Research answer saved.');
-  });
   document.querySelectorAll('[data-review-status]').forEach(button => button.onclick = () => busy(button, async () => {
     await api('/contact-review/companies/' + state.companyId + '/review-status', { method: 'PATCH', body: JSON.stringify({ reviewStatus: button.dataset.reviewStatus }) });
     await refresh(); toast('Company review status saved.');

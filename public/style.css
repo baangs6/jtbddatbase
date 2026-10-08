@@ -19,7 +19,3 @@
 .badge.verify_later { background: #e8eef7; color: #466181; }
 
 .badge.another_company { background: #e9e5f4; color: #635185; }
-
-.hiring-research { padding: 24px 30px; border-bottom: 1px solid var(--line); }
-.hiring-research textarea { display: block; width: 100%; min-height: 140px; margin: 10px 0; resize: vertical; }
-.hiring-research .research-line { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1em; }
