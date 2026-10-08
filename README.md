@@ -62,3 +62,5 @@ Per-contact destinations: expand Company & owner in a contact row, enter a new c
 
 
 Daily reports use Asia/Kolkata calendar days and begin recording activity from this update onward. They show each member's company decisions, status changes, destination/owner saves, transferred contacts, skips and restores. Repeated saves count as actions, while successful transfers count each contact once. Summary totals cover the whole selected day; the activity list shows the latest 500 events. Team accounts and activity are stored only in the staging database. No additional Render environment variables are required.
+
+Team members see only their own current India-day activity on dashboard cards. Administrators retain the overall contact totals and can view daily reports for each member.

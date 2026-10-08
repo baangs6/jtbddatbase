@@ -5,6 +5,15 @@ const { User, Activity } = require('../models/teamModels');
 const router = express.Router();
 router.use(require('../middleware/authMiddleware'));
 router.get('/me', (req, res) => res.json(req.user));
+router.get('/my-today', async (req, res) => {
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const start = new Date(date + 'T00:00:00+05:30');
+  const rows = await Activity.aggregate([
+    { $match: { actorId: String(req.user.id || 'administrator'), at: { $gte: start, $lt: new Date(start.getTime() + 86400000) } } },
+    { $group: { _id: '$action', count: { $sum: 1 } } }
+  ]);
+  res.json({ date, timezone: 'Asia/Kolkata', counts: Object.fromEntries(rows.map(row => [row._id, row.count])) });
+});
 router.use((req, res, next) => req.user.role === 'admin' ? next() : res.status(403).json({ message: 'Administrator access required.' }));
 router.get('/users', async (req, res) => res.json(await User.find().sort({ name: 1 }).lean()));
 router.post('/users', async (req, res) => {

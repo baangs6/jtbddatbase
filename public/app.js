@@ -56,9 +56,11 @@ async function loadCompanies() {
   const request = ++listRequest;
   try {
     const data = await api(`/contact-review/companies?search=${encodeURIComponent($('#company-search').value)}&status=${state.filter}&page=${state.page}`);
+    const personal = state.user?.role === 'member' ? await api('/team/my-today') : null;
     if (request !== listRequest) return;
     const stats = data.stats, total = Object.values(stats).reduce((sum, x) => sum + x, 0);
-    $('#stats').innerHTML = [['Total contacts', total, '≡'], ['Waiting for review', (stats.pending || 0) + (stats.duplicate || 0), '◷'], ['Moved to CRM', stats.transferred || 0, '↗'], ['Skipped', stats.skipped || 0, '−']].map(([label, count, icon]) => `<div class="stat"><div><span>${label}</span><strong>${count.toLocaleString()}</strong></div><div class="stat-icon">${icon}</div></div>`).join('');
+    const cards = personal ? [['Your decisions saved today', personal.counts.company_review || 0, '≡'], ['Your status changes today', personal.counts.company_status || 0, '◷'], ['You moved to CRM today', personal.counts.contact_transferred || 0, '↗'], ['You skipped today', personal.counts.contact_skipped || 0, '−']] : [['Total contacts', total, '≡'], ['Waiting for review', (stats.pending || 0) + (stats.duplicate || 0), '◷'], ['Moved to CRM', stats.transferred || 0, '↗'], ['Skipped', stats.skipped || 0, '−']];
+    $('#stats').innerHTML = cards.map(([label, count, icon]) => `<div class="stat"><div><span>${label}</span><strong>${count.toLocaleString()}</strong>${personal ? `<small>${esc(personal.date)} · India time</small>` : ''}</div><div class="stat-icon">${icon}</div></div>`).join('');
     $('#company-total').textContent = data.total;
     $('#company-list').innerHTML = data.companies.length ? data.companies.map(c => `<button class="company-item ${state.companyId === c._id ? 'active' : ''}" data-company="${esc(c._id)}"><span class="initial">${esc(c.name.slice(0, 1).toUpperCase())}</span><span><b>${esc(c.name)}</b><small>${c.counts.total} contacts · ${c.counts.remaining} to review</small>${badge(c.reviewStatus && c.reviewStatus !== 'pending' ? c.reviewStatus : c.decision)}</span></button>`).join('') : '<div class="empty"><p>No companies found.</p></div>';
     const pages = Math.max(1, Math.ceil(data.total / 40));

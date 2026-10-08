@@ -132,6 +132,16 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     assert.ok(!report.data.events.some(e => e.companyName === 'Before'));
     assert.equal((await call('/api/team/report', null, 'GET', memberToken)).status, 403);
     assert.equal((await call('/api/team/report?date=2026-02-31', null, 'GET', token)).status, 400);
+    const todayDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const todayStart = new Date(todayDate + 'T00:00:00+05:30');
+    await Activity.create({ actorId: 'another-member', actorName: 'Other', action: 'test_personal_only', at: new Date() });
+    await Activity.create({ actorId: createdUser.data.id, actorName: 'Entry One', action: 'test_yesterday', at: new Date(todayStart.getTime() - 1) });
+    const personal = await call('/api/team/my-today?user=another-member', null, 'GET', memberToken);
+    assert.equal(personal.status, 200);
+    assert.equal(personal.data.date, todayDate);
+    assert.equal(personal.data.counts.contact_transferred, 1);
+    assert.ok(!personal.data.counts.test_personal_only, 'Members cannot select another user');
+    assert.ok(!personal.data.counts.test_yesterday, 'Previous India calendar day excluded');
     const disabled = await call('/api/team/users/' + createdUser.data.id, { active: false }, 'PATCH', token);
     assert.equal(disabled.status, 200); assert.ok(!disabled.data.passwordHash);
     assert.equal((await call('/api/team/me', null, 'GET', memberToken)).status, 401);
