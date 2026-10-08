@@ -100,6 +100,24 @@ function syncWebsiteOption() {
   if (input.disabled) input.checked = false;
   input.closest('label').hidden = input.disabled;
 }
+function hiringText(value) {
+  return esc(value).replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+function hiringDisplay(research) {
+  if (!research) return '<p class="muted">No hiring research yet.</p>';
+  const lines = String(research.answer || '').split(/\r?\n/);
+  let html = '', table = false;
+  for (const line of lines) {
+    if (line.trim().startsWith('|')) {
+      const cells = line.trim().replace(/^\||\|$/g, '').split('|');
+      if (cells.every(c => /^\s*:?-+:?\s*$/.test(c))) continue;
+      if (!table) { html += '<div class="table-wrap"><table>'; table = true; }
+      html += '<tr>' + cells.map(c => '<td>' + hiringText(c.trim()) + '</td>').join('') + '</tr>';
+    } else { if (table) { html += '</table></div>'; table = false; } html += '<p>' + hiringText(line) + '</p>'; }
+  }
+  if (table) html += '</table></div>';
+  return '<p class="muted">Checked ' + esc(new Date(research.checkedAt).toLocaleString()) + ' · DeepSeek · Last 30 days</p>' + html + '<div class="research-sources">' + (research.sources || []).map(source => { try { const u = new URL(source.url); return ['http:', 'https:'].includes(u.protocol) ? '<p><a href="' + esc(u.href) + '" target="_blank" rel="noopener noreferrer">' + esc(source.title) + '</a></p>' : ''; } catch { return ''; } }).join('') + '</div>';
+}
 function renderDetail() {
   state.companyDirty = false; state.destinationDirty = new Set();
   const { company: c, contacts, crmConnected } = state.detail;
@@ -107,6 +125,7 @@ function renderDetail() {
   const available = contacts.filter(x => !['transferred', 'skipped'].includes(x.status));
   const duplicateCount = contacts.filter(x => x.duplicates.length).length;
   $('#detail').innerHTML = `<div class="detail-head"><div><h2>${esc(c.name)}</h2><p>${totalContacts} contacts in your import · ${available.length} waiting on this page</p></div>${badge(c.reviewStatus && c.reviewStatus !== "pending" ? c.reviewStatus : c.decision)}<div class="company-status-actions"><button class="secondary" data-review-status="another_company">Move to another company</button><button class="secondary" data-review-status="no_hiring">No Hiring</button><button class="secondary" data-review-status="verify_later">Verify Later</button>${c.reviewStatus && c.reviewStatus !== "pending" ? '<button class="quiet" data-review-status="pending">Restore to review</button>' : ""}</div></div>
+  <section class="hiring-research"><h3>Non-IT hiring in India · Last 30 days</h3><label for="deepseek-key">DeepSeek API key</label><input class="field" id="deepseek-key" type="password" autocomplete="off" placeholder="Enter key, or use DEEPSEEK_API_KEY in Render"><p class="muted">The key is sent only to your server and DeepSeek for this check. It is not saved. Each check uses your DeepSeek API balance.</p><button class="primary" id="check-hiring" ${state.config.demo ? 'disabled' : ''}>Check hiring</button><p id="hiring-error" class="error" role="alert"></p><div id="hiring-results">${hiringDisplay(c.hiringResearch)}</div></section>
   <section class="company-review"><div class="section-label"><span>1</span> CONFIRM THE COMPANY</div><p class="match-hint">Similar names are suggestions. Confirm the correct company before moving contacts.</p>
   ${!crmConnected ? '<div class="warning">CRM is not connected. You can review imports and save websites; transfers stay disabled.</div>' : ''}
   <div class="inline-search"><input class="field" id="crm-search" aria-label="Search CRM company names" placeholder="Try another company name"><button class="secondary" id="crm-search-button" ${!crmConnected ? 'disabled' : ''}>Search CRM</button></div><div id="matches"></div>
