@@ -60,9 +60,3 @@ Matching and CSV tests use no database. Integration tests start isolated tempora
 
 Per-contact destinations: expand Company & owner in a contact row, enter a new company name and verified website, choose an active CRM user, and save the contact destination before selecting Move. Blank company fields use the shared company decision. The selected owner is saved in assignedBy, which the CRM uses for displayed ownership and dashboards, and is included in assignedTo; existing assignedTo users are retained. The staging administrator remains the audit actor. Inactive owners block transfer. Custom destinations do not change the imported company grouping.
 
-
-## DeepSeek hiring research
-
-Each company has a Check hiring button. Enter a DeepSeek API key for that request, or configure DEEPSEEK_API_KEY in your server/Render environment. Entered keys are not stored in MongoDB or browser storage. Only the company name, its verified website and the research prompt are sent to DeepSeek; contacts are not sent. API usage consumes DeepSeek balance. DEEPSEEK_MODEL defaults to deepseek-flash.
-
-The app uses DeepSeek Anthropic-compatible messages with built-in web search. It saves the response and returned search links in staging. Missing search evidence or incomplete answers display UNVERIFIED. These are AI research findings: source links and posting dates still require review; source coverage is not guaranteed. Provider rejection or timeout preserves the previous saved result. Live account/model search support needs checking with a real key; mock tests cover requests, missing search evidence and errors.

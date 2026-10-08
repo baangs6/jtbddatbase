@@ -102,23 +102,6 @@ router.get('/crm-search', async (req, res) => {
   const leads = await getCrmLeads();
   res.json(m.candidates(name, leads.map(({ points_of_contact, ...lead }) => lead)));
 });
-const hiringRequests = new Set();
-router.post('/companies/:id/hiring-research', async (req, res) => {
-  const companyId = id(req.params.id);
-  if (hiringRequests.size >= 2 || hiringRequests.has(companyId)) throw fail(429, 'A hiring check is running. Wait before starting another.');
-  const apiKey = String(req.body.apiKey || process.env.DEEPSEEK_API_KEY || '').trim();
-  if (!apiKey || apiKey.length > 300 || /\s/.test(apiKey)) throw fail(400, 'Enter a valid DeepSeek API key.');
-  const { Company } = await getModels();
-  const company = await Company.findById(companyId);
-  if (!company) throw fail(404, 'Company not found.');
-  hiringRequests.add(companyId);
-  try {
-    const research = await require('../services/deepseekHiring')({ company, apiKey });
-    await Company.updateOne({ _id: company._id }, { $set: { hiringResearch: research } });
-    res.json(research);
-  } catch (e) { throw fail(502, e.name === 'TimeoutError' || e.name === 'AbortError' ? 'Research timed out. Try again.' : e.message); }
-  finally { hiringRequests.delete(companyId); }
-});
 router.patch('/companies/:id/review-status', async (req, res) => {
   if (!['pending', 'no_hiring', 'verify_later', 'another_company'].includes(req.body.reviewStatus)) throw fail(400, 'Choose a valid company review status.');
   const { Company } = await getModels();
