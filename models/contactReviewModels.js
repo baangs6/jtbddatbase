@@ -18,7 +18,7 @@ module.exports = async () => {
       key: { type: String, unique: true, required: true }, name: String,
       reviewStatus: { type: String, enum: ['pending', 'no_hiring', 'verify_later', 'another_company', 'existing_crm'], default: 'pending' },
       decision: { type: String, enum: ['pending', 'existing', 'new'], default: 'pending' },
-      crmLeadId: mongoose.Schema.Types.ObjectId, verifiedWebsite: String, reviewedBy: mongoose.Schema.Types.ObjectId
+      crmLeadId: mongoose.Schema.Types.ObjectId, verifiedWebsite: String, industryName: String, ownerId: mongoose.Schema.Types.ObjectId, reviewedBy: mongoose.Schema.Types.ObjectId
     }, { timestamps: true });
     const Contact = db.model('ReviewContact', contact), Company = db.model('ReviewCompany', company);
     await Promise.all([Contact.init(), Company.init()]);

@@ -56,7 +56,13 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     const blocked = await call('/api/contact-review/transfer', { contactIds: [String(existing._id)] }, 'POST', token); assert.equal(blocked.data.results[0].status, 'duplicate');
     const updated = await crm.collection('leads').findOne({ _id: leadId }); assert.equal(updated.points_of_contact.length, 2); assert.equal(updated.stage, 'New');
     const fresh = await Company.findOne({ name: 'Fresh Industries' });
-    await call(`/api/contact-review/companies/${fresh._id}`, { decision: 'new', website: 'fresh.example' }, 'PUT', token);
+    const companyOwner = new mongoose.Types.ObjectId();
+    await crm.collection('users').insertOne({ _id: companyOwner, name: 'Company Owner', status: 'Active' });
+    assert.equal((await call('/api/contact-review/companies/' + fresh._id, { decision: 'new', website: 'fresh.example', ownerId: String(new mongoose.Types.ObjectId()) }, 'PUT', token)).status, 400);
+    const companySaved = await call('/api/contact-review/companies/' + fresh._id, { decision: 'new', website: 'fresh.example', industryName: 'Manufacturing', ownerId: String(companyOwner) }, 'PUT', token);
+    assert.equal(companySaved.status, 200);
+    assert.equal(companySaved.data.industryName, 'Manufacturing');
+    assert.equal(companySaved.data.ownerId, String(companyOwner));
     const freshContacts = await Contact.find({ companyKey: fresh.key });
     const outcomes = await Promise.all(freshContacts.map(c => call('/api/contact-review/transfer', { contactIds: [String(c._id)] }, 'POST', token)));
     // Concurrent creation of one company can ask the second caller to refresh; retry follows saved mapping.
@@ -64,6 +70,9 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
       const retryFresh = await call('/api/contact-review/transfer', { contactIds: [String(freshContacts[i]._id)] }, 'POST', token); assert.equal(retryFresh.data.results[0].status, 'transferred');
     }
     const freshLeads = await crm.collection('leads').find({ company_name: 'Fresh Industries' }).toArray(); assert.equal(freshLeads.length, 1); assert.equal(freshLeads[0].points_of_contact.length, 2);
+    assert.equal(freshLeads[0].industry_name, 'Manufacturing');
+    assert.equal(String(freshLeads[0].assignedBy), String(companyOwner));
+    assert.ok(freshLeads[0].assignedTo.some(u => String(u) === String(companyOwner)));
     assert.equal(await mongoose.connection.collection('leads').countDocuments(), 0, 'CRM leads never appear in staging');
     assert.equal(await crm.collection('reviewcontacts').countDocuments(), 0, 'Imported contacts never appear in CRM staging collections');
     assert.equal(await Contact.countDocuments(), 8000);

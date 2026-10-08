@@ -117,6 +117,12 @@ router.put('/companies/:id', async (req, res) => {
   const { Company } = await getModels(); const company = await Company.findById(id(req.params.id));
   if (!company) throw fail(404, 'Company not found.');
   if (!['pending', 'existing', 'new'].includes(req.body.decision)) throw fail(400, 'Choose a company decision.');
+  if (req.body.ownerId) {
+    await ensureConnected();
+    if (!await crmConnection.collection('users').findOne({ _id: new mongoose.Types.ObjectId(id(req.body.ownerId)), status: 'Active' })) throw fail(400, 'Select an active CRM user.');
+  }
+  if (Object.hasOwn(req.body, 'ownerId')) company.ownerId = req.body.ownerId || undefined;
+  if (Object.hasOwn(req.body, 'industryName')) company.industryName = m.clean(req.body.industryName).slice(0,200);
   let url; try { url = m.website(req.body.website); } catch (e) { throw fail(400, e.message); }
   if (req.body.decision === 'existing') {
     await ensureConnected();
@@ -166,7 +172,7 @@ const transfer = async (contactId, user) => {
   if (contact.status === 'skipped') throw fail(409, 'Restore this contact before moving it.');
   const sourceCompany = await Company.findOne({ key: contact.companyKey });
   const company = contact.destinationName ? { name: contact.destinationName, verifiedWebsite: contact.destinationWebsite, decision: 'new' } : sourceCompany;
-  const ownerId = contact.ownerId || user.id;
+  const ownerId = contact.ownerId || (!contact.destinationName && company?.ownerId) || user.id;
   if (!await crmConnection.collection('users').findOne({ _id: new mongoose.Types.ObjectId(ownerId), status: 'Active' })) throw fail(409, 'The selected owner is no longer active. Choose another user.');
   if (!company || company.decision === 'pending') throw fail(409, 'Confirm the company match first.');
   try { await Lock.updateOne({ _id: 'transfer' }, { $setOnInsert: { revision: 0 } }, { upsert: true }); }
@@ -190,14 +196,14 @@ const transfer = async (contactId, user) => {
       if (contact.destinationName && exact.length === 1 && exact[0].contactReviewDestination === true && m.matchName(exact[0].company_name) === m.matchName(company.name) && (() => { try { return m.website(exact[0].website_url) === company.verifiedWebsite; } catch { return false; } })()) lead = exact[0];
       else if (exact.length) throw fail(409, `Company name or website already exists in CRM: ${exact.map(l => l.company_name).join('; ')}. Search CRM and confirm the correct company, save the company decision, then retry. No contact was moved.`);
       if (!lead) {
-      lead = new Lead({ company_name: company.name, website_url: company.verifiedWebsite, assignedBy: ownerId, createdBy: user.id, assignedTo: [ownerId], status: 'approved', lead_source: 'Contact review', contactReviewDestination: Boolean(contact.destinationName), points_of_contact: [] });
+      lead = new Lead({ company_name: company.name, website_url: company.verifiedWebsite, industry_name: company.industryName || '', assignedBy: ownerId, createdBy: user.id, assignedTo: [ownerId], status: 'approved', lead_source: 'Contact review', contactReviewDestination: Boolean(contact.destinationName), points_of_contact: [] });
       await lead.save({ session });
       await LeadActivity.create([{ leadId: lead._id, type: 'Lead Created', description: 'Company created from reviewed contact import.', performedBy: user.id, performedByName: user.name }], { session });
     }
     }
     lead.stage = 'New';
     lead.points_of_contact.push({ _id: contact._id, name: contact.name, email: contact.email, phone: contact.phone, alternate_phone: contact.alternate_phone || '', additionalPhones: contact.additionalPhones || [], designation: contact.designation, linkedin_url: contact.linkedin_url, stage: 'New', approvalStatus: lead.status === 'incomplete' ? 'pending' : 'approved', createdBy: user.id });
-    if (contact.ownerId) {
+    if (contact.ownerId || (!contact.destinationName && company.ownerId)) {
       lead.assignedBy = ownerId;
       if (!lead.assignedTo.some(value => String(value) === String(ownerId))) lead.assignedTo.push(ownerId);
     }
