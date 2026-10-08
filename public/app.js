@@ -182,13 +182,16 @@ async function refresh() { await loadDetail(state.companyId, state.detail?.conta
 $('#move-close').onclick = $('#move-cancel').onclick = () => $('#move-dialog').close();
 $('#move-confirm').onclick = () => busy($('#move-confirm'), async () => {
   const results = [];
+  const contactNames = new Map(state.detail.contacts.map(c => [c._id, c.name || c.email || 'Contact']));
   for (let offset = 0; offset < state.moveIds.length; offset += 100) {
     const response = await api('/contact-review/transfer', { method: 'POST', body: JSON.stringify({ contactIds: state.moveIds.slice(offset, offset + 100) }) }); results.push(...response.results);
   }
   $('#move-dialog').close(); await refresh();
   const moved = results.filter(x => x.status === 'transferred').length;
-  $('#transfer-results').innerHTML = `<div class="result-box"><strong>${state.config.demo ? 'Demo: ' : ''}${moved} contacts moved · ${results.length - moved} stayed in review</strong>${results.some(x => x.status !== 'transferred') ? `<ul>${results.filter(x => x.status !== 'transferred').map(x => `<li>${esc(state.detail.contacts.find(c => c._id === x.id)?.name || 'Contact')}: ${esc(x.message)}</li>`).join('')}</ul>` : ''}</div>`;
-  toast(`${state.config.demo ? 'Demo: ' : ''}${moved} contacts moved.`, moved === 0);
+  const failed = results.filter(x => x.status !== 'transferred');
+  $('#transfer-results').innerHTML = `<div class="result-box ${failed.length ? 'transfer-error' : ''}" role="${failed.length ? 'alert' : 'status'}"><strong>${state.config.demo ? 'Demo: ' : ''}${moved} contacts moved · ${failed.length} stayed in review</strong>${failed.length ? `<ul>${failed.map(x => `<li><b>${esc(contactNames.get(x.id) || 'Contact')}:</b> ${esc(x.message || 'Transfer could not be completed. Try again or check server logs.')}</li>`).join('')}</ul>` : ''}</div>`;
+  if (failed.length) $('#transfer-results').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  toast(failed.length ? `${moved} contacts moved. ${failed[0].message || 'Transfer could not be completed.'}${failed.length > 1 ? ' See all reasons below.' : ''}` : `${state.config.demo ? 'Demo: ' : ''}${moved} contacts moved.`, failed.length > 0);
 });
 const openImport = () => { $('#import-error').textContent = ''; $('#import-dialog').showModal(); };
 $('#import-open').onclick = openImport; $('#empty-import').onclick = openImport; $('#import-close').onclick = () => $('#import-dialog').close();

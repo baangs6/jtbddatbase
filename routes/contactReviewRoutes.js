@@ -188,7 +188,7 @@ const transfer = async (contactId, user) => {
       if (!company.verifiedWebsite) throw fail(409, 'Verify a website before creating a new company.');
       const exact = leads.filter(l => m.matchName(l.company_name) === m.matchName(company.name) || (l.website_url && (() => { try { return m.website(l.website_url) === company.verifiedWebsite; } catch { return false; } })()));
       if (contact.destinationName && exact.length === 1 && exact[0].contactReviewDestination === true && m.matchName(exact[0].company_name) === m.matchName(company.name) && (() => { try { return m.website(exact[0].website_url) === company.verifiedWebsite; } catch { return false; } })()) lead = exact[0];
-      else if (exact.length) throw fail(409, 'A matching company now exists in CRM. Link it before moving contacts.');
+      else if (exact.length) throw fail(409, `Company name or website already exists in CRM: ${exact.map(l => l.company_name).join('; ')}. Search CRM and confirm the correct company, save the company decision, then retry. No contact was moved.`);
       if (!lead) {
       lead = new Lead({ company_name: company.name, website_url: company.verifiedWebsite, assignedBy: ownerId, createdBy: user.id, assignedTo: [ownerId], status: 'approved', lead_source: 'Contact review', contactReviewDestination: Boolean(contact.destinationName), points_of_contact: [] });
       await lead.save({ session });
