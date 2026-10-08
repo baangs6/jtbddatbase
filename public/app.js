@@ -106,7 +106,7 @@ function renderDetail() {
   const totalContacts = state.detail.totalContacts ?? contacts.length, contactPage = state.detail.contactPage || 1, contactPages = Math.max(1, Math.ceil(totalContacts / 100));
   const available = contacts.filter(x => !['transferred', 'skipped'].includes(x.status));
   const duplicateCount = contacts.filter(x => x.duplicates.length).length;
-  $('#detail').innerHTML = `<div class="detail-head"><div><h2>${esc(c.name)}</h2><p>${totalContacts} contacts in your import · ${available.length} waiting on this page</p></div>${badge(c.reviewStatus && c.reviewStatus !== "pending" ? c.reviewStatus : c.decision)}<div class="company-status-actions"><button class="secondary" data-review-status="no_hiring">No Hiring</button><button class="secondary" data-review-status="verify_later">Verify Later</button>${c.reviewStatus && c.reviewStatus !== "pending" ? '<button class="quiet" data-review-status="pending">Restore to review</button>' : ""}</div></div>
+  $('#detail').innerHTML = `<div class="detail-head"><div><h2>${esc(c.name)}</h2><p>${totalContacts} contacts in your import · ${available.length} waiting on this page</p></div>${badge(c.reviewStatus && c.reviewStatus !== "pending" ? c.reviewStatus : c.decision)}<div class="company-status-actions"><button class="secondary" id="another-company">Move to another company</button><button class="secondary" data-review-status="no_hiring">No Hiring</button><button class="secondary" data-review-status="verify_later">Verify Later</button>${c.reviewStatus && c.reviewStatus !== "pending" ? '<button class="quiet" data-review-status="pending">Restore to review</button>' : ""}</div></div>
   <section class="company-review"><div class="section-label"><span>1</span> CONFIRM THE COMPANY</div><p class="match-hint">Similar names are suggestions. Confirm the correct company before moving contacts.</p>
   ${!crmConnected ? '<div class="warning">CRM is not connected. You can review imports and save websites; transfers stay disabled.</div>' : ''}
   <div class="inline-search"><input class="field" id="crm-search" aria-label="Search CRM company names" placeholder="Try another company name"><button class="secondary" id="crm-search-button" ${!crmConnected ? 'disabled' : ''}>Search CRM</button></div><div id="matches"></div>
@@ -138,6 +138,13 @@ function renderDetail() {
     $('.review-actions .muted').textContent = 'Save the changed decision before moving contacts';
   });
   $('#save-company').onclick = () => busy($('#save-company'), saveCompany);
+  $('#another-company').onclick = () => {
+    $('#crm-search').value = '';
+    $('#crm-search').placeholder = 'Enter the destination company name';
+    $('#company-error').textContent = 'Search for the destination company, select its match, and save the company decision. Then select the contacts to move. Already transferred contacts must be moved within the CRM.';
+    $('#crm-search').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('#crm-search').focus();
+  };
   $('#crm-search-button').onclick = () => busy($('#crm-search-button'), async () => {
     state.candidates = await api(`/contact-review/crm-search?name=${encodeURIComponent($('#crm-search').value || c.name)}`); renderMatches();
   });
