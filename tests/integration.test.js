@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 test('isolated databases: import 8,000 contacts, confirm matches, transfer, block duplicates, retry safely', { timeout: 240000 }, async () => {
-  const repl = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  const repl = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instanceOpts: [{ launchTimeout: 60000 }] });
   let server, crm;
   try {
     process.env.CONTACT_REVIEW_MONGO_URI = repl.getUri('test_staging');
@@ -54,7 +54,7 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     const reconciled = await call('/api/contact-review/transfer', { contactIds: [String(newContact._id)] }, 'POST', token); assert.equal(reconciled.data.results[0].status, 'transferred');
     const existing = await Contact.findOne({ email: 'exists@abc.example' });
     const blocked = await call('/api/contact-review/transfer', { contactIds: [String(existing._id)] }, 'POST', token); assert.equal(blocked.data.results[0].status, 'duplicate');
-    const updated = await crm.collection('leads').findOne({ _id: leadId }); assert.equal(updated.points_of_contact.length, 2); assert.equal(updated.stage, 'Proposal Sent');
+    const updated = await crm.collection('leads').findOne({ _id: leadId }); assert.equal(updated.points_of_contact.length, 2); assert.equal(updated.stage, 'New');
     const fresh = await Company.findOne({ name: 'Fresh Industries' });
     await call(`/api/contact-review/companies/${fresh._id}`, { decision: 'new', website: 'fresh.example' }, 'PUT', token);
     const freshContacts = await Contact.find({ companyKey: fresh.key });
@@ -107,3 +107,4 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     await mongoose.disconnect(); await repl.stop();
   }
 });
+

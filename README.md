@@ -34,7 +34,7 @@ CRM credentials are never sent to the browser. Do not put production credentials
 3. Select a company. Name similarity suggests candidates but never links automatically. Search alternate spellings if needed.
 4. Choose an existing CRM company or verify a website and mark the company as new. “Find website” opens a web search; the operator must verify the website. The website is updated in CRM only when the explicit checkbox is selected and the decision is saved.
 5. Review CRM and staging email/phone matches. Select contacts and confirm their transfer. Shared phone numbers require review; matching CRM contacts are blocked rather than silently overwritten.
-6. Transferred records retain CRM company/contact IDs. Skipped contacts can be restored. Existing client sales stages are shown from CRM and preserved.
+6. Transferred records retain CRM company/contact IDs. Skipped contacts can be restored. Each successful contact transfer sets the destination CRM company stage and new contact stage to New.
 
 ## Transfer guarantees and limits
 

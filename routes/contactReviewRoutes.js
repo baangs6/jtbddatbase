@@ -188,6 +188,7 @@ const transfer = async (contactId, user) => {
       await LeadActivity.create([{ leadId: lead._id, type: 'Lead Created', description: 'Company created from reviewed contact import.', performedBy: user.id, performedByName: user.name }], { session });
     }
     }
+    lead.stage = 'New';
     lead.points_of_contact.push({ _id: contact._id, name: contact.name, email: contact.email, phone: contact.phone, alternate_phone: contact.alternate_phone || '', additionalPhones: contact.additionalPhones || [], designation: contact.designation, linkedin_url: contact.linkedin_url, stage: 'New', approvalStatus: lead.status === 'incomplete' ? 'pending' : 'approved', createdBy: user.id });
     if (contact.ownerId) {
       lead.assignedBy = ownerId;
