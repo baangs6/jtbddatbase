@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.log
+test-results/
+playwright-report/
+
+output/
+.env.*
+!.env.example
+*.xls
+*.xlsx
