@@ -183,7 +183,8 @@ const transfer = async (contactId, user) => {
   try { await Lock.updateOne({ _id: 'transfer' }, { $setOnInsert: { revision: 0 } }, { upsert: true }); }
   catch (error) { if (error.code !== 11000) throw error; }
   let result;
-  await crmConnection.transaction(async session => {
+  await require('../services/transferTransaction')(crmConnection, async session => {
+    result = undefined;
     await Lock.updateOne({ _id: 'transfer' }, { $inc: { revision: 1 } }, { session });
     const leads = await Lead.find({}).session(session);
     // Deterministic POC ID makes retries safe even if saving staging status failed after a CRM commit.
@@ -228,7 +229,11 @@ router.post('/transfer', async (req, res) => {
   const results = [];
   for (const contactId of [...new Set(req.body.contactIds)]) {
     try { results.push(await transfer(contactId, req.user)); }
-    catch (e) { results.push({ id: contactId, status: 'error', message: /Transaction numbers|replica set|mongos/i.test(e.message) ? 'Transfers require MongoDB Atlas or a replica set. No contact was moved.' : e.message }); }
+    catch (e) {
+      console.error('[ContactReview transfer]', { contactId, code: e.code, codeName: e.codeName, message: e.message });
+      const transactionConflict = require('../services/transferTransaction').retryable(e);
+      results.push({ id: contactId, status: 'error', message: /Transaction numbers|replica set|mongos/i.test(e.message) ? 'Transfers require MongoDB Atlas or a replica set. No contact was moved.' : transactionConflict ? 'CRM could not finish the transfer after 3 automatic attempts because of a database transaction conflict. The contact remains in review. Refresh and retry; duplicate checks protect against importing it twice.' : e.message });
+    }
   }
   res.json({ results });
 });
