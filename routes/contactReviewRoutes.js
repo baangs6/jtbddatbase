@@ -15,11 +15,13 @@ router.use(auth);
 const audit = require('../services/teamAudit');
 router.use((req, res, next) => req.path.startsWith('/import') && req.user.role !== 'admin' ? res.status(403).json({ message: 'Only administrators can import contact lists.' }) : next());
 const readCsv = require('../services/csvImport');
-const getCrmLeads = async () => {
+// Short-lived snapshots are for suggestions only. Transfers recheck live CRM
+// records inside their transaction, so cached reads never authorize a transfer.
+const getCrmLeads = require('../services/readCache')(async () => {
   if (!isConfigured()) return [];
   await ensureConnected();
-  return Lead.find({}).select('company_name website_url stage status points_of_contact').lean();
-};
+  return Lead.find({}).select('company_name website_url stage status points_of_contact._id points_of_contact.name points_of_contact.email points_of_contact.phone points_of_contact.alternate_phone points_of_contact.additionalPhones').lean();
+}, 60000);
 router.post('/import/preview', upload.single('file'), async (req, res) => {
   if (!req.file) throw fail(400, 'Choose a CSV file.');
   const parsed = await readCsv(req.file.buffer);
@@ -132,7 +134,7 @@ router.put('/companies/:id', async (req, res) => {
   if (req.body.decision === 'existing') {
     await ensureConnected();
     const lead = await Lead.findById(id(req.body.crmLeadId)); if (!lead) throw fail(404, 'CRM company not found.');
-    if (req.body.updateCrmWebsite) { if (!url) throw fail(400, 'Enter the verified website first.'); lead.website_url = url; await lead.save(); }
+    if (req.body.updateCrmWebsite) { if (!url) throw fail(400, 'Enter the verified website first.'); lead.website_url = url; await lead.save(); getCrmLeads.invalidate(); }
     company.crmLeadId = lead._id;
   } else company.crmLeadId = undefined;
   company.decision = req.body.decision; company.verifiedWebsite = url; company.reviewedBy = req.user.id;
@@ -233,7 +235,7 @@ router.post('/transfer', async (req, res) => {
       console.error('[ContactReview transfer]', { contactId, code: e.code, codeName: e.codeName, message: e.message });
       const transactionConflict = require('../services/transferTransaction').retryable(e);
       results.push({ id: contactId, status: 'error', message: /Transaction numbers|replica set|mongos/i.test(e.message) ? 'Transfers require MongoDB Atlas or a replica set. No contact was moved.' : transactionConflict ? 'CRM could not finish the transfer after 3 automatic attempts because of a database transaction conflict. The contact remains in review. Refresh and retry; duplicate checks protect against importing it twice.' : e.message });
-    }
+    } finally { getCrmLeads.invalidate(); }
   }
   res.json({ results });
 });

@@ -87,11 +87,14 @@ async function loadDetail(companyId, contactPage = 1) {
   $('#detail').innerHTML = '<div class="loading">Checking companies and contact matches…</div>';
   document.querySelectorAll('[data-company]').forEach(b => b.classList.toggle('active', b.dataset.company === companyId));
   try {
-    const detail = await api(`/contact-review/companies/${encodeURIComponent(companyId)}?contactPage=${contactPage}`);
+    const [detail, users] = await Promise.all([
+      api(`/contact-review/companies/${encodeURIComponent(companyId)}?contactPage=${contactPage}`),
+      state.config.demo || !state.config.crmConnected ? [] : api('/contact-review/crm-users')
+    ]);
     if (request !== detailRequest) return;
     state.detail = detail; state.candidates = detail.candidates;
     if (detail.selectedLead && !state.candidates.some(c => c._id === detail.selectedLead._id)) state.candidates.unshift({ ...detail.selectedLead, score: 1 });
-    state.users = state.config.demo || !detail.crmConnected ? [] : await api('/contact-review/crm-users');
+    state.users = users;
     renderDetail();
   } catch(error) { if (request === detailRequest) $('#detail').innerHTML = `<div class="empty"><h2>Unable to open company</h2><p>${esc(error.message)}</p><button id="retry-detail" class="secondary">Try again</button></div>`; $('#retry-detail')?.addEventListener('click', () => loadDetail(companyId)); }
 }
