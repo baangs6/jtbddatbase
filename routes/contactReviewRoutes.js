@@ -188,20 +188,32 @@ const transfer = async (contactId, user) => {
   await require('../services/transferTransaction')(crmConnection, async session => {
     result = undefined;
     await Lock.updateOne({ _id: 'transfer' }, { $inc: { revision: 1 } }, { session });
-    const leads = await Lead.find({}).session(session);
+    // Filter on the server instead of downloading every CRM contact while
+    // holding the transaction lock. Recheck normalized values below.
+    const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const identifiers = [{ 'points_of_contact._id': contact._id }];
+    if (m.emailKey(contact.email)) identifiers.push({ 'points_of_contact.email': { $regex: '^\\s*' + escapeRegex(m.emailKey(contact.email)) + '\\s*$', $options: 'i' } });
+    for (const phone of m.contactPhones(contact)) {
+      const digits = m.phoneKey(phone).slice(-7);
+      if (!digits) continue;
+      const pattern = digits.split('').join('\\D*') + '\\D*$';
+      for (const field of ['phone', 'alternate_phone', 'additionalPhones']) identifiers.push({ ['points_of_contact.' + field]: { $regex: pattern } });
+    }
+    const leads = await Lead.find({ $or: identifiers }).select('company_name points_of_contact._id points_of_contact.name points_of_contact.email points_of_contact.phone points_of_contact.alternate_phone points_of_contact.additionalPhones').session(session).lean();
     // Deterministic POC ID makes retries safe even if saving staging status failed after a CRM commit.
     const prior = leads.find(l => l.points_of_contact.some(p => String(p._id) === String(contact._id)));
     if (prior) { result = { id: contactId, status: 'transferred', leadId: prior._id, contactId: contact._id }; return; }
-    const duplicates = crmContacts(leads.map(l => l.toObject())).filter(p => m.duplicateReason(contact, p));
+    const duplicates = crmContacts(leads).filter(p => m.duplicateReason(contact, p));
     if (duplicates.length) { result = { id: contactId, status: 'duplicate', message: 'Email or phone already exists in CRM. Review before moving.', matches: duplicates.map(p => ({ name: p.name, company_name: p.company_name, leadId: p.leadId, contactId: p._id, reason: m.duplicateReason(contact, p) })) }; return; }
     let lead;
     if (company.decision === 'existing') {
-      lead = leads.find(l => String(l._id) === String(company.crmLeadId));
+      lead = await Lead.findById(company.crmLeadId).session(session);
       if (!lead) throw fail(409, 'The selected CRM company no longer exists. Review the mapping again.');
     } else {
       if (!company.verifiedWebsite) throw fail(409, 'Verify a website before creating a new company.');
-      const exact = leads.filter(l => m.matchName(l.company_name) === m.matchName(company.name) || (l.website_url && (() => { try { return m.website(l.website_url) === company.verifiedWebsite; } catch { return false; } })()));
-      if (contact.destinationName && exact.length === 1 && exact[0].contactReviewDestination === true && m.matchName(exact[0].company_name) === m.matchName(company.name) && (() => { try { return m.website(exact[0].website_url) === company.verifiedWebsite; } catch { return false; } })()) lead = exact[0];
+      const companies = await Lead.find({}).select('company_name website_url contactReviewDestination').session(session).lean();
+      const exact = companies.filter(l => m.matchName(l.company_name) === m.matchName(company.name) || (l.website_url && (() => { try { return m.website(l.website_url) === company.verifiedWebsite; } catch { return false; } })()));
+      if (contact.destinationName && exact.length === 1 && exact[0].contactReviewDestination === true && m.matchName(exact[0].company_name) === m.matchName(company.name) && (() => { try { return m.website(exact[0].website_url) === company.verifiedWebsite; } catch { return false; } })()) lead = await Lead.findById(exact[0]._id).session(session);
       else if (exact.length) throw fail(409, `Company name or website already exists in CRM: ${exact.map(l => l.company_name).join('; ')}. Search CRM and confirm the correct company, save the company decision, then retry. No contact was moved.`);
       if (!lead) {
       lead = new Lead({ company_name: company.name, website_url: company.verifiedWebsite, industry_name: company.industryName || '', assignedBy: ownerId, createdBy: user.id, assignedTo: [ownerId], status: 'approved', lead_source: 'Contact review', contactReviewDestination: Boolean(contact.destinationName), points_of_contact: [] });
