@@ -181,8 +181,17 @@ async function saveCompany() {
   const choice = $('input[name="company-choice"]:checked')?.value;
   if (!choice) { $('#company-error').textContent = 'Select “This is a new company” above, or select an existing CRM match.'; $('input[name="company-choice"][value="new"]').focus(); throw new Error('Select “This is a new company” before saving.'); }
   if (choice === 'new' && !$('#website').value.trim()) throw new Error('Find and verify the company website before saving a new company.');
-  await api(`/contact-review/companies/${state.companyId}`, { method: 'PUT', body: JSON.stringify({ decision: choice === 'new' ? 'new' : 'existing', crmLeadId: choice === 'new' ? undefined : choice, website: $('#website').value.trim(), newCompanyName: $('#new-company-name').value.trim(), industryName: $('#company-industry').value.trim(), ownerId: $('#company-owner').value, updateCrmWebsite: choice !== 'new' && $('#update-website').checked }) });
-  toast('Company decision saved. Review the contacts below.'); await refresh();
+  const companyId = state.companyId;
+  const saved = await api(`/contact-review/companies/${companyId}`, { method: 'PUT', body: JSON.stringify({ decision: choice === 'new' ? 'new' : 'existing', crmLeadId: choice === 'new' ? undefined : choice, website: $('#website').value.trim(), newCompanyName: $('#new-company-name').value.trim(), industryName: $('#company-industry').value.trim(), ownerId: $('#company-owner').value, updateCrmWebsite: choice !== 'new' && $('#update-website').checked }) });
+  if (state.companyId !== companyId) return;
+  state.detail.company = saved; state.companyDirty = false;
+  $('#company-error').textContent = '';
+  $('.review-actions .muted').textContent = '✓ Saved. Select contacts below and click Move selected to add them to CRM.';
+  $('.review-actions .muted').setAttribute('role', 'status');
+  updateSelected();
+  toast('Decision saved. Select contacts and click Move selected to add them to CRM.');
+  // Refresh sidebar totals without downloading all company details again.
+  void loadCompanies();
 }
 async function refresh() { await loadDetail(state.companyId, state.detail?.contactPage || 1); await loadCompanies(); }
 $('#move-close').onclick = $('#move-cancel').onclick = () => $('#move-dialog').close();
