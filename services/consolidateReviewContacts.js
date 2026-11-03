@@ -13,7 +13,7 @@ module.exports = async Contact => {
     if (!group) { candidates.push({ survivor: row, members: [row] }); buckets.set(bucketKey, candidates); continue; }
     const target = group.survivor;
     const phones = m.uniquePhones([target, row]);
-    const updates = { phone: phones[0] || '', alternate_phone: phones[1] || '', additionalPhones: phones.slice(2), phoneKeys: phones.map(m.phoneKey) };
+    const updates = { sources: [...new Set([...(target.sources || []), ...(row.sources || [])])], phone: phones[0] || '', alternate_phone: phones[1] || '', additionalPhones: phones.slice(2), phoneKeys: phones.map(m.phoneKey) };
     for (const field of ['name', 'email', 'designation', 'linkedin_url']) if (!target[field] && row[field]) updates[field] = row[field];
     if (updates.email) updates.emailKey = m.emailKey(updates.email);
     if (target.status === 'skipped' && row.status !== 'skipped') updates.status = row.status;

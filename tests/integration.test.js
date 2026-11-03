@@ -36,6 +36,13 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     const form = () => { const f = new FormData(); f.append('file', new Blob([csv], { type: 'text/csv' }), 'contacts.csv'); f.append('mapping', JSON.stringify(mapping)); return f; };
     const preview = await call('/api/contact-review/import/preview', form(), 'POST', token); assert.equal(preview.data.count, 8000);
     const imported = await call('/api/contact-review/import', form(), 'POST', token); assert.equal(imported.status, 200); assert.equal(imported.data.inserted, 8000);
+    const tagged = form(); tagged.append('sourceName', 'Master Data BD');
+    const taggedImport = await call('/api/contact-review/import', tagged, 'POST', token);
+    assert.equal(taggedImport.data.inserted, 0, 'Source labels do not duplicate contacts');
+    const sourceList = await call('/api/contact-review/companies?source=Master%20Data%20BD', null, 'GET', token);
+    assert.ok(sourceList.data.total > 0);
+    assert.ok(sourceList.data.companies.every(c => c.sources.includes('Master Data BD')));
+    assert.equal((await call('/api/contact-review/companies?source=missing-source', null, 'GET', token)).data.total, 0);
     const repeat = await call('/api/contact-review/import', form(), 'POST', token); assert.equal(repeat.data.inserted, 0); assert.equal(repeat.data.alreadyImported, 8000);
     assert.equal(await crm.collection('leads').countDocuments(), 1, 'Import never creates CRM leads');
     const { Contact, Company } = await require('../models/contactReviewModels')();
@@ -84,6 +91,7 @@ test('isolated databases: import 8,000 contacts, confirm matches, transfer, bloc
     const combined = await call('/api/contact-review/import', combinedFile, 'POST', token);
     assert.equal(combined.data.merged, 1);
     const single = await Contact.findOne({ name: 'Same Person', mergedInto: null });
+    assert.ok(single.sources.includes('Imported contacts'));
     assert.equal(single.alternate_phone, '9000055555');
     assert.equal(await Contact.countDocuments({ name: 'Same Person', mergedInto: null }), 1);
     assert.equal(await Contact.countDocuments({ name: 'Same Person', status: 'merged' }), 1);

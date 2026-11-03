@@ -55,7 +55,7 @@ $('#logout').addEventListener('click', signOut);
 async function loadCompanies() {
   const request = ++listRequest;
   try {
-    const data = await api(`/contact-review/companies?search=${encodeURIComponent($('#company-search').value)}&status=${state.filter}&page=${state.page}`);
+    const data = await api(`/contact-review/companies?search=${encodeURIComponent($('#company-search').value)}&status=${state.filter}&source=${encodeURIComponent($('#source-filter').value)}&page=${state.page}`);
     const personal = state.user?.role === 'member' ? await api('/team/my-today') : null;
     if (request !== listRequest) return;
     const stats = data.stats, total = Object.values(stats).reduce((sum, x) => sum + x, 0);
@@ -77,6 +77,7 @@ async function loadCompanies() {
   } catch(error) { toast(error.message, true); }
 }
 $('#company-list').addEventListener('click', event => { const button = event.target.closest('[data-company]'); if (button) loadDetail(button.dataset.company); });
+$('#source-filter').addEventListener('change', () => { state.page = 1; state.companyId = null; ++detailRequest; state.selected.clear(); $('#detail').innerHTML = '<div class="empty"><p>Select a company from this data source.</p></div>'; loadCompanies(); });
 $('#company-search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.page = 1; loadCompanies(); }, 250); });
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => {
   state.filter = button.dataset.filter; state.page = 1;
@@ -88,7 +89,7 @@ async function loadDetail(companyId, contactPage = 1) {
   document.querySelectorAll('[data-company]').forEach(b => b.classList.toggle('active', b.dataset.company === companyId));
   try {
     const [detail, users] = await Promise.all([
-      api(`/contact-review/companies/${encodeURIComponent(companyId)}?contactPage=${contactPage}`),
+      api(`/contact-review/companies/${encodeURIComponent(companyId)}?contactPage=${contactPage}&source=${encodeURIComponent($('#source-filter').value)}`),
       state.config.demo || !state.config.crmConnected ? [] : api('/contact-review/crm-users')
     ]);
     if (request !== detailRequest) return;
@@ -134,7 +135,7 @@ function renderDetail() {
     const profile = profileUrl ? `<a class="linkedin-link" href="${esc(profileUrl)}" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn profile for ${esc(row.name || 'contact')}">LinkedIn profile ↗</a>` : `<small>${row.linkedin_url ? 'LinkedIn URL needs review' : 'No LinkedIn link'}</small>`;
     const altPhones = [row.alternate_phone, ...(row.additionalPhones || [])].filter(Boolean).map(phone => `<small class="alternative-phone">Alternative: ${esc(phone)}</small>`).join('');
     return `<tr><td><input type="checkbox" data-contact="${esc(row._id)}" aria-label="Select ${esc(row.name || row.email || 'contact')}" ${eligible ? '' : 'disabled'}></td><td><strong>${esc(row.name || 'Unnamed contact')}</strong><small>${esc(row.designation || 'No designation')}</small>${profile}
-    ${row.status === 'transferred' ? '' : `<details><summary>Company &amp; owner</summary><label>New company name<input class="field" data-destination-name="${esc(row._id)}" aria-label="New company name for ${esc(row.name)}" value="${esc(row.destinationName || '')}" placeholder="Leave blank to use company above"></label><label>Verified website<input class="field" data-destination-website="${esc(row._id)}" aria-label="New company website for ${esc(row.name)}" value="${esc(row.destinationWebsite || '')}"></label><label>Assign to active CRM user<select class="field" data-owner="${esc(row._id)}" aria-label="Owner for ${esc(row.name)}"><option value="">Use default company ownership</option>${(state.users || []).map(u => `<option value="${esc(u._id)}" ${row.ownerId === u._id ? 'selected' : ''}>${esc(u.name)} (${esc(u.email)})</option>`).join('')}</select></label><small>CRM ownership is at company level. Existing company owners are retained.</small><button class="secondary" data-save-destination="${esc(row._id)}">Save contact destination</button></details>`}</td><td><div class="contact-email">${esc(row.email || 'No email')}</div><small>${esc(row.phone || 'No phone')}</small>${altPhones}</td><td>${badge(row.status === 'pending' && crmDuplicate ? 'duplicate' : row.status)}${row.duplicates.map(d => `<span class="duplicate-note">${esc(d.source)}: ${esc(d.reason)}<br>${esc(d.name || 'Contact')} · ${esc(d.company_name)}</span>`).join('')}${!row.email && !row.phone ? '<span class="duplicate-note">Name only — verify identity manually.</span>' : ''}</td><td>${row.status === 'transferred' ? '' : `<button class="quiet" data-skip="${esc(row._id)}" data-next="${row.status === 'skipped' ? 'pending' : 'skipped'}">${row.status === 'skipped' ? 'Restore' : 'Skip'}</button>`}</td></tr>`;
+    <small class="source-label">Source: ${esc((row.sources || []).join(' · ') || 'Unlabelled')}</small>${row.status === 'transferred' ? '' : `<details><summary>Company &amp; owner</summary><label>New company name<input class="field" data-destination-name="${esc(row._id)}" aria-label="New company name for ${esc(row.name)}" value="${esc(row.destinationName || '')}" placeholder="Leave blank to use company above"></label><label>Verified website<input class="field" data-destination-website="${esc(row._id)}" aria-label="New company website for ${esc(row.name)}" value="${esc(row.destinationWebsite || '')}"></label><label>Assign to active CRM user<select class="field" data-owner="${esc(row._id)}" aria-label="Owner for ${esc(row.name)}"><option value="">Use default company ownership</option>${(state.users || []).map(u => `<option value="${esc(u._id)}" ${row.ownerId === u._id ? 'selected' : ''}>${esc(u.name)} (${esc(u.email)})</option>`).join('')}</select></label><small>CRM ownership is at company level. Existing company owners are retained.</small><button class="secondary" data-save-destination="${esc(row._id)}">Save contact destination</button></details>`}</td><td><div class="contact-email">${esc(row.email || 'No email')}</div><small>${esc(row.phone || 'No phone')}</small>${altPhones}</td><td>${badge(row.status === 'pending' && crmDuplicate ? 'duplicate' : row.status)}${row.duplicates.map(d => `<span class="duplicate-note">${esc(d.source)}: ${esc(d.reason)}<br>${esc(d.name || 'Contact')} · ${esc(d.company_name)}</span>`).join('')}${!row.email && !row.phone ? '<span class="duplicate-note">Name only — verify identity manually.</span>' : ''}</td><td>${row.status === 'transferred' ? '' : `<button class="quiet" data-skip="${esc(row._id)}" data-next="${row.status === 'skipped' ? 'pending' : 'skipped'}">${row.status === 'skipped' ? 'Restore' : 'Skip'}</button>`}</td></tr>`;
   }).join('')}</tbody></table></div><div class="pagination"><button id="contact-prev" class="quiet" ${contactPage <= 1 ? 'disabled' : ''}>← Previous</button><span>Page ${contactPage} / ${contactPages} · up to 100 contacts</span><button id="contact-next" class="quiet" ${contactPage >= contactPages ? 'disabled' : ''}>Next →</button></div><div class="table-bottom">Email and phone matches block transfers. Import matches stay visible for review.</div></section>`;
   renderMatches();
   document.querySelectorAll('[data-review-status]').forEach(button => button.onclick = () => busy(button, async () => {
@@ -231,7 +232,7 @@ $('#import-submit').onclick = () => busy($('#import-submit'), async () => {
   const mapping = Object.fromEntries([...document.querySelectorAll('[data-map]')].map(select => [select.dataset.map, select.value]));
   if (!mapping.company_name) { $('#import-error').textContent = 'Choose the company name column.'; return; }
   if (!mapping.name && !mapping.email && !mapping.phone) { $('#import-error').textContent = 'Choose at least one contact identifier: name, email, or phone.'; return; }
-  const form = new FormData(); form.append('file', $('#csv-file').files[0]); form.append('mapping', JSON.stringify(mapping));
+  const form = new FormData(); form.append('file', $('#csv-file').files[0]); form.append('mapping', JSON.stringify(mapping)); form.append('sourceName', $('#import-source').value.trim());
   try {
     const result = await api('/contact-review/import', { method: 'POST', body: form });
     const summary = `${result.inserted} imported · ${result.alreadyImported} already imported · ${result.merged || 0} combined · ${result.invalidCount} invalid rows`;

@@ -5,7 +5,7 @@ module.exports = async () => {
     const db = mongoose.connection;
     const contact = new mongoose.Schema({
       sourceKey: { type: String, unique: true, required: true }, companyKey: { type: String, index: true, required: true },
-      company_name: String, name: String, email: String, phone: String, designation: String, linkedin_url: String,
+      sources: { type: [String], index: true }, industry_name: String, sourceCompanyName: String, company_name: String, name: String, email: String, phone: String, designation: String, linkedin_url: String,
       alternate_phone: String, additionalPhones: [String], phoneKeys: { type: [String], index: true },
       mergedInto: { type: mongoose.Schema.Types.ObjectId, index: true }, mergedAt: Date,
       emailKey: { type: String, index: true }, phoneKey: { type: String, index: true },
@@ -15,7 +15,7 @@ module.exports = async () => {
       importedBy: mongoose.Schema.Types.ObjectId, note: String
     }, { timestamps: true });
     const company = new mongoose.Schema({
-      key: { type: String, unique: true, required: true }, name: String,
+      key: { type: String, unique: true, required: true }, name: String, sources: { type: [String], index: true },
       reviewStatus: { type: String, enum: ['pending', 'no_hiring', 'verify_later', 'another_company', 'existing_crm'], default: 'pending' },
       decision: { type: String, enum: ['pending', 'existing', 'new'], default: 'pending' },
       crmLeadId: mongoose.Schema.Types.ObjectId, verifiedWebsite: String, industryName: String, newCompanyName: String, ownerId: mongoose.Schema.Types.ObjectId, reviewedBy: mongoose.Schema.Types.ObjectId

@@ -25,3 +25,5 @@
 .result-box.transfer-error{background:#fff4ee;border-color:#bc765e;color:#783623}.transfer-error li{margin:8px 0;line-height:1.6}
 
 .company-fields{margin:16px 0}.company-fields .field{display:block;width:100%;margin-top:6px}
+
+#source-filter{min-width:0;width:100%;border:0;background:transparent;color:var(--ink);padding:8px}.source-label{display:block;margin-top:8px;color:var(--green);font-weight:600}

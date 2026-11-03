@@ -32,7 +32,8 @@ router.post('/import', upload.single('file'), async (req, res) => {
   let mapping; try { mapping = JSON.parse(req.body.mapping); } catch { throw fail(400, 'Choose the CSV column mapping.'); }
   const { rows, headers } = await readCsv(req.file.buffer);
   if (!mapping.company_name || !headers.includes(mapping.company_name)) throw fail(400, 'Map the company name column.');
-  const fields = ['company_name', 'name', 'email', 'phone', 'alternate_phone', 'designation', 'linkedin_url'];
+  const sourceName = m.clean(req.body.sourceName).slice(0,100) || 'Imported contacts';
+  const fields = ['industry_name', 'sourceCompanyName', 'company_name', 'name', 'email', 'phone', 'alternate_phone', 'designation', 'linkedin_url'];
   for (const field of fields) if (mapping[field] && !headers.includes(mapping[field])) throw fail(400, `Unknown column for ${field}.`);
   const { Contact, Company } = await getModels();
   const records = [], invalid = [], companies = new Map();
@@ -46,21 +47,22 @@ router.post('/import', upload.single('file'), async (req, res) => {
     if (row.alternate_phone && m.phoneKey(row.alternate_phone).length < 7) { invalid.push({ row: index + 2, reason: 'Alternative phone number is too short.' }); return; }
     const phones = m.uniquePhones([row, ...['Source Phone', 'Source Mobile Phone', 'Source WhatsApp Phone'].map(header => ({ phone: m.clean(raw[header]) })).filter(r => m.phoneKey(r.phone).length >= 7)]);
     row.phone = phones[0] || ''; row.alternate_phone = phones[1] || ''; row.additionalPhones = phones.slice(2); row.phoneKeys = phones.map(m.phoneKey);
+    row.sources = [sourceName];
     row.sourceKey = m.fingerprint(row); row.emailKey = m.emailKey(row.email); row.phoneKey = m.phoneKey(row.phone); row.importedBy = req.user.id;
     records.push(row); companies.set(row.companyKey, row.company_name);
   });
   if (!records.length) throw fail(400, `No valid contacts. ${invalid.length} invalid rows.`);
-  await Company.bulkWrite([...companies].map(([key, name]) => ({ updateOne: { filter: { key }, update: { $setOnInsert: { key, name, decision: 'pending' } }, upsert: true } })));
+  await Company.bulkWrite([...companies].map(([key, name]) => ({ updateOne: { filter: { key }, update: { $setOnInsert: { key, name, decision: 'pending' }, $addToSet: { sources: sourceName } }, upsert: true } })));
   let inserted = 0;
   for (let offset = 0; offset < records.length; offset += 500) {
-    const result = await Contact.bulkWrite(records.slice(offset, offset + 500).map(row => ({ updateOne: { filter: { sourceKey: row.sourceKey }, update: { $setOnInsert: row }, upsert: true } })));
+    const result = await Contact.bulkWrite(records.slice(offset, offset + 500).map(row => ({ updateOne: { filter: { sourceKey: row.sourceKey }, update: { $setOnInsert: Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'sources')), $addToSet: { sources: sourceName } }, upsert: true } })));
     inserted += result.upsertedCount;
   }
   const savedSources = await Contact.find({ sourceKey: { $in: records.map(row => row.sourceKey) } }).select('sourceKey mergedInto').lean();
   const savedByKey = new Map(savedSources.map(row => [row.sourceKey, row]));
   const numberUpdates = records.map(row => {
     const source = savedByKey.get(row.sourceKey);
-    return { updateOne: { filter: { _id: source.mergedInto || source._id, status: { $ne: 'transferred' } }, update: { $addToSet: { additionalPhones: { $each: m.contactPhones(row) } } } } };
+    return { updateOne: { filter: { _id: source.mergedInto || source._id, status: { $ne: 'transferred' } }, update: { $addToSet: { sources: sourceName, additionalPhones: { $each: m.contactPhones(row) } } } } };
   });
   for (let start = 0; start < numberUpdates.length; start += 500) await Contact.bulkWrite(numberUpdates.slice(start, start + 500));
   const consolidated = await require('../services/consolidateReviewContacts')(Contact);
@@ -69,23 +71,27 @@ router.post('/import', upload.single('file'), async (req, res) => {
 router.get('/companies', async (req, res) => {
   const { Company, Contact } = await getModels();
   const search = m.clean(req.query.search).slice(0, 150), page = Math.max(1, Number(req.query.page) || 1);
+  const source = m.clean(req.query.source).slice(0,100);
   const query = search ? { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } } : {};
+  if (source) query.sources = source;
   if (req.query.status === 'existing_crm') query.$or = [{ decision: 'existing' }, { reviewStatus: 'existing_crm' }];
   else if (['no_hiring', 'verify_later', 'another_company'].includes(req.query.status)) query.reviewStatus = req.query.status;
   else if (['pending', 'existing', 'new'].includes(req.query.status)) { query.decision = req.query.status; query.reviewStatus = { $nin: ['no_hiring', 'verify_later', 'another_company', 'existing_crm'] }; }
   const [companies, total, stats] = await Promise.all([
     Company.find(query).sort({ name: 1 }).skip((page - 1) * 40).limit(40).lean(), Company.countDocuments(query),
-    Contact.aggregate([{ $match: { mergedInto: null } }, { $group: { _id: '$status', count: { $sum: 1 } } }])
+    Contact.aggregate([{ $match: { mergedInto: null, ...(source ? { sources: source } : {}) } }, { $group: { _id: '$status', count: { $sum: 1 } } }])
   ]);
-  const counts = await Contact.aggregate([{ $match: { mergedInto: null, companyKey: { $in: companies.map(x => x.key) } } }, { $group: { _id: '$companyKey', total: { $sum: 1 }, remaining: { $sum: { $cond: [{ $in: ['$status', ['pending', 'duplicate']] }, 1, 0] } } } }]);
+  const counts = await Contact.aggregate([{ $match: { mergedInto: null, ...(source ? { sources: source } : {}), companyKey: { $in: companies.map(x => x.key) } } }, { $group: { _id: '$companyKey', total: { $sum: 1 }, remaining: { $sum: { $cond: [{ $in: ['$status', ['pending', 'duplicate']] }, 1, 0] } } } }]);
   res.json({ companies: companies.map(x => ({ ...x, counts: counts.find(c => c._id === x.key) || { total: 0, remaining: 0 } })), total, page, stats: Object.fromEntries(stats.map(x => [x._id, x.count])) });
 });
 const crmContacts = leads => leads.flatMap(lead => (lead.points_of_contact || []).map(poc => ({ ...poc, leadId: lead._id, company_name: lead.company_name })));
 router.get('/companies/:id', async (req, res) => {
   const { Company, Contact } = await getModels();
   const company = await Company.findById(id(req.params.id)).lean(); if (!company) throw fail(404, 'Company not found.');
+  const source = m.clean(req.query.source).slice(0,100);
+  const contactFilter = { companyKey: company.key, mergedInto: null, ...(source ? { sources: source } : {}) };
   const contactPage = Math.max(1, Math.floor(Number(req.query.contactPage) || 1));
-  const [contacts, leads, totalContacts] = await Promise.all([Contact.find({ companyKey: company.key, mergedInto: null }).sort({ name: 1, _id: 1 }).skip((contactPage - 1) * 100).limit(100).lean(), getCrmLeads(), Contact.countDocuments({ companyKey: company.key, mergedInto: null })]);
+  const [contacts, leads, totalContacts] = await Promise.all([Contact.find(contactFilter).sort({ name: 1, _id: 1 }).skip((contactPage - 1) * 100).limit(100).lean(), getCrmLeads(), Contact.countDocuments(contactFilter)]);
   const crm = crmContacts(leads);
   const emails = [...new Set(contacts.map(c => c.emailKey).filter(Boolean))], phones = [...new Set(contacts.flatMap(c => m.contactPhones(c).map(m.phoneKey)))];
   const staging = emails.length || phones.length ? await Contact.find({ mergedInto: null, $or: [{ emailKey: { $in: emails } }, { phoneKey: { $in: phones } }, { phoneKeys: { $in: phones } }] }).select('name email phone alternate_phone additionalPhones company_name').lean() : [];
